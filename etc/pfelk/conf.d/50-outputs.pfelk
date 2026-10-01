@@ -2,53 +2,66 @@
 ################################################################################
 # Version: 26.10                                                               #
 # Required: True                                                               #
-# Description: Sends enriched logs to Elasticsearch.                           #
+# Description: Builds ECS data-stream routing fields and sends events to        #
+#              Elasticsearch.                                                  #
 #                                                                              #
+# Required environment/keystore value: PFELK_ES_PASSWORD                       #
+# Optional: PFELK_ES_HOSTS, PFELK_ES_USER, PFELK_CA_PATH, PFELK_NAMESPACE      #
 ################################################################################
-#
+
 filter {
-  if [log][syslog][appname] == "captiveportal" {
-    mutate { add_field => { "[data_stream][namespace]" => "captiveportal" } }
-  } else if [log][syslog][appname] == "dhcp" {
-    mutate { add_field => { "[data_stream][namespace]" => "dhcp" } }
-  } else if [log][syslog][appname] == "firewall" {
-    mutate { add_field => { "[data_stream][namespace]" => "firewall" } }
-  } else if "bind9" in [tags] or "dpinger" in [tags] or "ntpd" in [tags] or "web_portal" in [tags] {
-    mutate { add_field => { "[data_stream][namespace]" => "firewall_processes" } }
-  } else if [log][syslog][appname] == "haproxy" {
-    mutate { add_field => { "[data_stream][namespace]" => "haproxy" } }
-  } else if [log][syslog][appname] == "kea-dhcp" {
-    mutate { add_field => { "[data_stream][namespace]" => "kea-dhcp" } }
-  } else if [log][syslog][appname] == "nginx" {
-    mutate { add_field => { "[data_stream][namespace]" => "nginx" } }
-  } else if [log][syslog][appname] == "openvpn" {
-    mutate { add_field => { "[data_stream][namespace]" => "openvpn" } }
-  } else if [log][syslog][appname] == "unbound" {
-    mutate { add_field => { "[data_stream][namespace]" => "unbound" } }
-  } else if [log][syslog][appname] == "suricata" {
-    mutate { add_field => { "[data_stream][namespace]" => "suricata" } }
-  } else if [log][syslog][appname] == "snort" {
-    mutate { add_field => { "[data_stream][namespace]" => "snort" } }
-  } else if [log][syslog][appname] == "squid" {
-    mutate { add_field => { "[data_stream][namespace]" => "squid" } }
-  } else {
-    mutate { add_field => { "[data_stream][namespace]" => "unknown" } }
+  # Every pfELK event should carry a dataset. Unknown/unparsed processes are kept
+  # rather than discarded so new/changed log formats can be discovered.
+  if ![event][module] {
+    mutate {
+      add_field => { "[event][module]" => "pfelk" }
+    }
+  }
+
+  if ![event][dataset] {
+    mutate {
+      add_field => { "[event][dataset]" => "pfelk.unknown" }
+    }
+  }
+
+  # ECS data streams are <type>-<dataset>-<namespace>.
+  # Application identity belongs in dataset; namespace is deployment grouping.
+  mutate {
+    add_field => {
+      "[data_stream][type]" => "logs"
+      "[data_stream][namespace]" => "${PFELK_NAMESPACE:default}"
+    }
+    copy => {
+      "[event][dataset]" => "[data_stream][dataset]"
+    }
   }
 }
+
 output {
   elasticsearch {
+    id => "pfelk-elasticsearch"
+
+    # data_stream_auto_routing derives the target from data_stream.* fields.
     data_stream => "true"
-    data_stream_type => "logs"
-    data_stream_dataset => "pfelk"
-    ### X-Pack Security Method ###
-    #[DOCKER]# hosts => ["https://es01:9200"]
-    #[DOCKER]# ssl_enabled => true
-    #[DOCKER]# ssl_certificate_authorities => ["/usr/share/logstash/config/certs/ca/ca.crt"]
-    hosts => ["https://localhost:9200"] #[Disable if using Docker]
-    user => "${PFELK_ES_USER}"
+    data_stream_auto_routing => true
+    data_stream_sync_fields => true
+
+    # Native default. Docker should set PFELK_ES_HOSTS=https://es01:9200.
+    hosts => [ "${PFELK_ES_HOSTS:https://localhost:9200}" ]
+
+    # Prefer a dedicated pfELK writer account. Do not use logstash_system for
+    # pipeline writes; that built-in account is for Logstash monitoring.
+    user => "${PFELK_ES_USER:elastic}"
     password => "${PFELK_ES_PASSWORD}"
+
     ssl_enabled => true
-    ssl_certificate_authorities => ["${PFELK_CA_PATH}"] #[Disable if using Docker]
-    #[OPTIONAL]# ssl_verification_mode => full   # default; or 'certificate'/'none' (not recommended)
+    # Native default. Docker should set:
+    # PFELK_CA_PATH=/usr/share/logstash/config/certs/ca/ca.crt
+    ssl_certificate_authorities => [
+      "${PFELK_CA_PATH:/etc/logstash/config/certs/http_ca.crt}"
+    ]
+
+    # Leave certificate verification enabled.
+    ssl_verification_mode => "full"
   }
 }
