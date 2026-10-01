@@ -2,168 +2,238 @@
 ################################################################################
 # Version: 26.10                                                               #
 # Required: True                                                               #
-# Description: Enriches pf (firewall) logs (OPNsense/pfSense) 		           #
+# Description: Parses and enriches pf filterlog events from pfSense/OPNsense.   #
 #                                                                              #
+# Key changes:                                                                 #
+# - network.transport replaces network.protocol for TCP/UDP/ICMP transport.    #
+# - network.direction uses perimeter ECS values inbound/outbound.              #
+# - packet length is represented as network.bytes, not *.packets.              #
+# - network.packets is set to 1 for a single filterlog packet event.           #
+# - observer ingress/egress interface fields are populated.                    #
+# - common numeric fields are explicitly converted.                            #
 ################################################################################
-#
+
 filter {
-### filterlog ###
-  if [log][syslog][appname] =~ /^filterlog$/ {
+  if [log][syslog][appname] == "filterlog" {
     mutate {
-      add_tag => "firewall"
-      add_field => { "[event][dataset]" => "pfelk.firewall" }
-      replace => { "[log][syslog][appname]" => "firewall" }
-      copy => { "filter_message" => "pfelk_csv" }
+      add_tag => [ "firewall" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.firewall"
+        "[event][kind]" => "event"
+        "[event][category]" => "network"
+        "[observer][type]" => "firewall"
+      }
+      replace => {
+        "[log][syslog][appname]" => "firewall"
+      }
+      copy => {
+        "filter_message" => "pfelk_csv"
+        "[log][syslog][hostname]" => "[observer][hostname]"
+      }
     }
+
     mutate {
-      strip => "pfelk_csv"
+      strip => [ "pfelk_csv" ]
       split => { "pfelk_csv" => "," }
     }
 
-    # [Common Fields]
-    # rule.id, pf.rule.subid, pf.anchor, rule.uuid, interface.name, event.reason, event.action, network.direction, network.type
-    # [Not ECS compliant fields] pf.rule.subid, 
+    # Common filterlog fields.
     mutate {
       add_field => {
-        "[rule][id]" =>		  "%{[pfelk_csv][0]}"
-        "[pf][rule][subid]" =>    "%{[pfelk_csv][1]}"
-        "[pf][anchor]" =>	  "%{[pfelk_csv][2]}"
-        "[rule][uuid]" =>         "%{[pfelk_csv][3]}"
-        "[interface][name]" =>    "%{[pfelk_csv][4]}"
-        "[event][reason]" =>      "%{[pfelk_csv][5]}"
-        "[event][action]" =>      "%{[pfelk_csv][6]}"
+        "[rule][id]" => "%{[pfelk_csv][0]}"
+        "[pf][rule][subid]" => "%{[pfelk_csv][1]}"
+        "[pf][anchor]" => "%{[pfelk_csv][2]}"
+        "[rule][uuid]" => "%{[pfelk_csv][3]}"
+        "[interface][name]" => "%{[pfelk_csv][4]}"
+        "[event][reason]" => "%{[pfelk_csv][5]}"
+        "[event][action]" => "%{[pfelk_csv][6]}"
         "[network][direction]" => "%{[pfelk_csv][7]}"
-        "[network][type]" =>      "%{[pfelk_csv][8]}"
+        "[network][type]" => "%{[pfelk_csv][8]}"
       }
     }
-    # [IPv4]
-    # [ECS compliant fields] network.iana_number, network.protocol, source.ip, destination.ip
-    # [Not ECS compliant fields] pf.tos, pf.ecn, pf.ttl, pf.id, pf.offest, pf.flags, pf.packet.length
+    mutate {
+      lowercase => [ "[event][action]", "[network][direction]" ]
+    }
+
+    # IPv4
     if [network][type] == "4" {
       mutate {
-      add_field => {
-          "[pf][tos]" =>	       "%{[pfelk_csv][9]}"
-          "[pf][ecn]" =>	       "%{[pfelk_csv][10]}"
-          "[pf][ttl]" =>	       "%{[pfelk_csv][11]}"
-          "[pf][id]" =>		       "%{[pfelk_csv][12]}"
-          "[pf][offset]" =>	       "%{[pfelk_csv][13]}"
-          "[pf][flags]" =>	       "%{[pfelk_csv][14]}"
-          "[network][iana_number]" =>   "%{[pfelk_csv][15]}"
-          "[network][protocol]" =>    "%{[pfelk_csv][16]}"
-          "[pf][packet][length]" =>    "%{[pfelk_csv][17]}"
-          "[source][ip]" =>	       "%{[pfelk_csv][18]}"
-          "[destination][ip]" =>       "%{[pfelk_csv][19]}"
+        add_field => {
+          "[pf][tos]" => "%{[pfelk_csv][9]}"
+          "[pf][ecn]" => "%{[pfelk_csv][10]}"
+          "[pf][ttl]" => "%{[pfelk_csv][11]}"
+          "[pf][id]" => "%{[pfelk_csv][12]}"
+          "[pf][offset]" => "%{[pfelk_csv][13]}"
+          "[pf][flags]" => "%{[pfelk_csv][14]}"
+          "[network][iana_number]" => "%{[pfelk_csv][15]}"
+          "[network][transport]" => "%{[pfelk_csv][16]}"
+          "[pf][packet][length]" => "%{[pfelk_csv][17]}"
+          "[source][ip]" => "%{[pfelk_csv][18]}"
+          "[destination][ip]" => "%{[pfelk_csv][19]}"
         }
       }
-      # [TCP]
-      # [ECS compliant fields] source.port, destingation.port
-      # [Not ECS compliant fields] pd.data_length, pf.tcp.flags, pf.tcp..sequence_number, pf.tcp..ack, pf.tcp..window, pf.tcp.urg, pf.tcp.options
-      if [network][protocol] == "tcp" {
+      mutate {
+        lowercase => [ "[network][transport]" ]
+        convert => {
+          "[pf][ttl]" => "integer"
+          "[pf][id]" => "integer"
+          "[pf][offset]" => "integer"
+          "[pf][packet][length]" => "integer"
+        }
+      }
+
+      if [network][transport] == "tcp" {
         mutate {
           add_field => {
-            "[source][port]" =>			"%{[pfelk_csv][20]}"
-            "[destination][port]" =>		"%{[pfelk_csv][21]}"
-            "[pf][data_length]" =>		"%{[pfelk_csv][22]}"
-            "[pf][tcp][flags]" =>		"%{[pfelk_csv][23]}"
-            "[pf][tcp][sequence_number]" =>     "%{[pfelk_csv][24]}"
-            "[pf][tcp][ack]" =>		        "%{[pfelk_csv][25]}"
-            "[pf][tcp][window]" =>		"%{[pfelk_csv][26]}"
-            "[pf][tcp][urg]" =>			"%{[pfelk_csv][27]}"
-            "[pf][tcp][options]" =>	        "%{[pfelk_csv][28]}"
+            "[source][port]" => "%{[pfelk_csv][20]}"
+            "[destination][port]" => "%{[pfelk_csv][21]}"
+            "[pf][data_length]" => "%{[pfelk_csv][22]}"
+            "[pf][tcp][flags]" => "%{[pfelk_csv][23]}"
+            "[pf][tcp][sequence_number]" => "%{[pfelk_csv][24]}"
+            "[pf][tcp][ack]" => "%{[pfelk_csv][25]}"
+            "[pf][tcp][window]" => "%{[pfelk_csv][26]}"
+            "[pf][tcp][urg]" => "%{[pfelk_csv][27]}"
+            "[pf][tcp][options]" => "%{[pfelk_csv][28]}"
           }
         }
-      }
-      # [UDP]
-      # [ECS compliant fields] source.port, destination.port 
-      # [Not ECS compliant fields] pf.data_length
-      if [network][protocol] == "udp" {
+        mutate {
+          convert => {
+            "[source][port]" => "integer"
+            "[destination][port]" => "integer"
+            "[pf][data_length]" => "integer"
+            "[pf][tcp][ack]" => "integer"
+            "[pf][tcp][window]" => "integer"
+            "[pf][tcp][urg]" => "integer"
+          }
+        }
+      } else if [network][transport] == "udp" {
         mutate {
           add_field => {
-            "[source][port]" =>	        "%{[pfelk_csv][20]}"
-            "[destination][port]" =>	"%{[pfelk_csv][21]}"
-            "[pf][data_length]" =>	"%{[pfelk_csv][22]}"
+            "[source][port]" => "%{[pfelk_csv][20]}"
+            "[destination][port]" => "%{[pfelk_csv][21]}"
+            "[pf][data_length]" => "%{[pfelk_csv][22]}"
+          }
+        }
+        mutate {
+          convert => {
+            "[source][port]" => "integer"
+            "[destination][port]" => "integer"
+            "[pf][data_length]" => "integer"
           }
         }
       }
     }
-    # [IPv6]
-    # [ECS compliant fields] network.iana_number, network.protocol, source.ip, destination.ip
-    # [Not ECS compliant fields] pf.class, pf.flow, pf.hoplimit, pf.packet.length
+
+    # IPv6
     if [network][type] == "6" {
       mutate {
         add_field => {
-            "[pf][class]" =>              "%{[pfelk_csv][9]}"
-            "[pf][flow]" =>		  "%{[pfelk_csv][10]}"
-            "[pf][hoplimit]" =>		  "%{[pfelk_csv][11]}"
-            "[network][protocol]" =>      "%{[pfelk_csv][12]}"
-            "[network][iana_number]" =>	  "%{[pfelk_csv][13]}"
-            "[pf][packet][length]" =>	  "%{[pfelk_csv][14]}"
-            "[source][ip]" =>		  "%{[pfelk_csv][15]}"
-            "[destination][ip]" =>	  "%{[pfelk_csv][16]}"
+          "[pf][class]" => "%{[pfelk_csv][9]}"
+          "[pf][flow]" => "%{[pfelk_csv][10]}"
+          "[pf][hoplimit]" => "%{[pfelk_csv][11]}"
+          "[network][transport]" => "%{[pfelk_csv][12]}"
+          "[network][iana_number]" => "%{[pfelk_csv][13]}"
+          "[pf][packet][length]" => "%{[pfelk_csv][14]}"
+          "[source][ip]" => "%{[pfelk_csv][15]}"
+          "[destination][ip]" => "%{[pfelk_csv][16]}"
         }
       }
-      # [TCP]
-      # [ECS compliant fields] source.port, destination.port
-      # [Not ECS compliant fields] pf.data_length, pf.tcp.flags, pf.tcp..sequence_number, pf.tcp..ack, pf.tcp..window, pf.tcp.urg, pf.tcp.options
-      if [network][protocol] == "tcp" {
+      mutate {
+        lowercase => [ "[network][transport]" ]
+        convert => {
+          "[pf][hoplimit]" => "integer"
+          "[pf][packet][length]" => "integer"
+        }
+      }
+
+      if [network][transport] == "tcp" {
         mutate {
           add_field => {
-            "[source][port]" =>			"%{[pfelk_csv][17]}"
-            "[destination][port]" =>		"%{[pfelk_csv][18]}"
-            "[pf][data_length]" =>		"%{[pfelk_csv][19]}"
-            "[pf][tcp][flags]" =>		"%{[pfelk_csv][20]}"
-            "[pf][tcp][sequence_number]" =>     "%{[pfelk_csv][21]}"
-            "[pf][tcp][ack]" =>			"%{[pfelk_csv][22]}"
-            "[pf][tcp][window]" =>		"%{[pfelk_csv][23]}"
-            "[pf][tcp][urg]" =>			"%{[pfelk_csv][24]}"
-            "[pf][tcp][options]" =>		"%{[pfelk_csv][25]}"
+            "[source][port]" => "%{[pfelk_csv][17]}"
+            "[destination][port]" => "%{[pfelk_csv][18]}"
+            "[pf][data_length]" => "%{[pfelk_csv][19]}"
+            "[pf][tcp][flags]" => "%{[pfelk_csv][20]}"
+            "[pf][tcp][sequence_number]" => "%{[pfelk_csv][21]}"
+            "[pf][tcp][ack]" => "%{[pfelk_csv][22]}"
+            "[pf][tcp][window]" => "%{[pfelk_csv][23]}"
+            "[pf][tcp][urg]" => "%{[pfelk_csv][24]}"
+            "[pf][tcp][options]" => "%{[pfelk_csv][25]}"
+          }
+        }
+        mutate {
+          convert => {
+            "[source][port]" => "integer"
+            "[destination][port]" => "integer"
+            "[pf][data_length]" => "integer"
+            "[pf][tcp][ack]" => "integer"
+            "[pf][tcp][window]" => "integer"
+            "[pf][tcp][urg]" => "integer"
+          }
+        }
+      } else if [network][transport] == "udp" {
+        mutate {
+          add_field => {
+            "[source][port]" => "%{[pfelk_csv][17]}"
+            "[destination][port]" => "%{[pfelk_csv][18]}"
+            "[pf][data_length]" => "%{[pfelk_csv][19]}"
+          }
+        }
+        mutate {
+          convert => {
+            "[source][port]" => "integer"
+            "[destination][port]" => "integer"
+            "[pf][data_length]" => "integer"
           }
         }
       }
-      # [UDP]
-      # [ECS compliant fields] source.port, destination.port
-      # [Not ECS compliant fields] pf.data_length
-      if [network][protocol] == "udp" {
-        mutate {
-          add_field => {
-            "[source][port]" =>		"%{[pfelk_csv][17]}"
-            "[destination][port]" =>	"%{[pfelk_csv][18]}"
-            "[pf][data_length]" =>	"%{[pfelk_csv][19]}"
-          }
-        }
-      }
     }
-    # [ECS] Rename values/fields for ECS compliance
-    if [network][direction] =~ /^out$/ {
-      mutate {
-        rename => { "[pf][data_length]" => "[destination][bytes]" }
-        rename => { "[pf][packet][length]" => "[destination][packets]" }
-       }
-    }
-    if [network][direction] =~ /^in$/ {
-      mutate {
-        rename => { "[pf][data_length]" => "[source][bytes]" }
-        rename => { "[pf][packet][length]" => "[source][packets]" }
-      }
-    }
+
+    # Normalize network layer.
     if [network][type] == "4" {
-      mutate {
-        update => { "[network][type]" => "ipv4" }
-      }
+      mutate { update => { "[network][type]" => "ipv4" } }
+    } else if [network][type] == "6" {
+      mutate { update => { "[network][type]" => "ipv6" } }
     }
-    if [network][type] == "6" {
-      mutate {
-	update => { "[network][type]" => "ipv6" }
-      }
-    }
+
+    # filterlog is generated by a network/perimeter observer. ECS therefore
+    # recommends inbound/outbound rather than host-oriented ingress/egress.
     if [network][direction] == "in" {
       mutate {
-	update => { "[network][direction]" => "ingress" }
+        copy => {
+          "[interface][name]" => "[observer][ingress][interface][name]"
+        }
+        update => {
+          "[network][direction]" => "inbound"
+        }
+      }
+    } else if [network][direction] == "out" {
+      mutate {
+        copy => {
+          "[interface][name]" => "[observer][egress][interface][name]"
+        }
+        update => {
+          "[network][direction]" => "outbound"
+        }
       }
     }
-    if [network][type] == "out" {
+
+    # A filterlog record describes one packet. Preserve the firewall-specific
+    # packet/payload lengths while also providing ECS network totals.
+    if [pf][packet][length] {
       mutate {
-	update => { "[network][direction]" => "egress" }
+        copy => {
+          "[pf][packet][length]" => "[network][bytes]"
+        }
+        add_field => {
+          "[network][packets]" => "1"
+        }
+      }
+      mutate {
+        convert => {
+          "[network][bytes]" => "integer"
+          "[network][packets]" => "integer"
+        }
       }
     }
   }
