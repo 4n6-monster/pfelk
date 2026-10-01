@@ -1,261 +1,420 @@
 # 05-apps.pfelk
 ################################################################################
-# Version: 24.09                                                               #
+# Version: 26.10                                                               #
 # Required: True                                                               #
-# Description: Parses events based on process.name and further enriches events #
-#                                                                              #
+# Description: Parses application events and applies ECS-oriented enrichment.   #
 ################################################################################
-#
+
 filter {
-  ### captive portal ###
-  # Rename pfSense captive portal log from logportalauth to captiveportal
+  ### captive portal ############################################################
   if [log][syslog][appname] =~ /^logportalauth/ {
     mutate {
       replace => { "[log][syslog][appname]" => "captiveportal" }
     }
   }
+
   if [log][syslog][appname] =~ /^captiveportal/ {
     mutate {
-      add_tag => "captive" 
-      add_field => { "[event][dataset]" => "pfelk.captive" }
+      add_tag => [ "captive" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.captiveportal"
+      }
       rename => { "filter_message" => "captiveportalmessage" }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "captiveportalmessage", "%{CAPTIVEPORTAL}" ]
+      match => { "captiveportalmessage" => "%{CAPTIVEPORTAL}" }
+      tag_on_failure => [ "_pfelk_captiveportal_parse_failure" ]
     }
   }
-  ### dhcpd ### 
-  ## Depreciated - see KEADHCP ###
-  if [log][syslog][appname] =~ /^dhcpd$/ {
+
+  ### ISC dhcpd - deprecated upstream in favor of Kea ###########################
+  if [log][syslog][appname] == "dhcpd" {
     mutate {
       add_tag => [ "dhcp", "dhcpdv4" ]
-      add_field => { "[event][dataset]" => "pfelk.dhcp" }
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.dhcp"
+      }
       replace => { "[log][syslog][appname]" => "dhcp" }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{DHCPD}"]
+      match => { "filter_message" => "%{DHCPD}" }
+      tag_on_failure => [ "_pfelk_dhcp_parse_failure" ]
     }
   }
-  ### dpinger ###
+
+  ### dpinger ###################################################################
   if [log][syslog][appname] =~ /^dpinger/ {
     mutate {
-      add_tag => "dpinger"
-      add_field => { "[event][dataset]" => "pfelk.dpinger" }
+      add_tag => [ "dpinger" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.dpinger"
+      }
     }
   }
-  ### haproxy ###
+
+  ### HAProxy ###################################################################
   if [log][syslog][appname] =~ /^haproxy/ {
     mutate {
-      add_tag => "haproxy"
-      add_field => { "[event][dataset]" => "pfelk.haproxy" }
+      add_tag => [ "haproxy" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.haproxy"
+      }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{HAPROXY}" ]
+      # HA_PROXY includes both HTTP and TCP mode patterns.
+      match => { "filter_message" => "%{HA_PROXY}" }
+      tag_on_failure => [ "_pfelk_haproxy_parse_failure" ]
     }
   }
-  ### kea-dhcp4 ###
-  ### In-progress ###
-  if [log][syslog][appname] =~ /^kea-dhcp4$/ {
+
+  ### Kea DHCPv4 ################################################################
+  if [log][syslog][appname] == "kea-dhcp4" {
     mutate {
       add_tag => [ "kea-dhcp", "dhcp4" ]
-      add_field => { "[event][dataset]" => "pfelk.kea-dhcp4" }
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.kea_dhcp4"
+      }
       replace => { "[log][syslog][appname]" => "kea-dhcp" }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{KEADHCP4}"]
+      match => { "filter_message" => "%{KEADHCP4}" }
+      tag_on_failure => [ "_pfelk_kea_dhcp4_parse_failure" ]
     }
   }
-  ### kea-dhcp6 ###
-  ### In-progress ###
-  if [log][syslog][appname] =~ /^kea-dhcp6$/ {
+
+  ### Kea DHCPv6 - parser remains intentionally conservative/in-progress ########
+  if [log][syslog][appname] == "kea-dhcp6" {
     mutate {
       add_tag => [ "kea-dhcp", "dhcp6" ]
-      add_field => { "[event][dataset]" => "pfelk.kea-dhcp6" }
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.kea_dhcp6"
+      }
       replace => { "[log][syslog][appname]" => "kea-dhcp" }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{KEADHCP6}"]
+      match => { "filter_message" => "%{KEADHCP6}" }
+      tag_on_failure => [ "_pfelk_kea_dhcp6_parse_failure" ]
     }
   }
-  ### nginx ###
+
+  ### nginx #####################################################################
   if [log][syslog][appname] =~ /^nginx/ {
     mutate {
-      add_tag => "nginx"
-      add_field => { "[event][dataset]" => "pfelk.nginx" }
+      add_tag => [ "nginx" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.nginx"
+      }
       replace => { "[log][syslog][appname]" => "nginx" }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{NGINX}" }
+      tag_on_failure => [ "_pfelk_nginx_parse_failure" ]
     }
   }
-  ### openvpn ###
+
+  ### OpenVPN ###################################################################
   if [log][syslog][appname] =~ /^openvpn/ {
     mutate {
-      add_tag => "openvpn"
-      add_field => { "[event][dataset]" => "pfelk.openvpn" }
+      add_tag => [ "openvpn" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.openvpn"
+      }
+      replace => { "[log][syslog][appname]" => "openvpn" }
     }
+
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{OPENVPN}" ]
+      match => { "filter_message" => "%{OPENVPN}" }
+      tag_on_failure => [ "_pfelk_openvpn_parse_failure" ]
     }
-    if "openvpn" in [tags] {
+
+    # Normalize the remote OpenVPN peer into ECS client fields while retaining
+    # the OpenVPN-specific originals.
+    if [openvpn][client][ip] {
       mutate {
-        replace => [ "[log][syslog][appname]", "openvpn" ]
+        copy => { "[openvpn][client][ip]" => "[client][ip]" }
+      }
+    }
+    if [openvpn][client][port] {
+      mutate {
+        copy => { "[openvpn][client][port]" => "[client][port]" }
+      }
+      mutate {
+        convert => { "[client][port]" => "integer" }
+      }
+    }
+    if [openvpn][client][user][name] {
+      mutate {
+        copy => { "[openvpn][client][user][name]" => "[client][user][name]" }
       }
     }
   }
-  ### named ###
+
+  ### BIND/named ################################################################
   if [log][syslog][appname] =~ /^named/ {
     mutate {
-      add_tag => "bind9"
-      add_field => { "[event][dataset]" => "pfelk.bind9" }
+      add_tag => [ "bind9" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.bind9"
+        "[network][protocol]" => "dns"
+      }
     }
     grok {
-     #patterns_dir => [ "/etc/pfelk/patterns" ]
-     match => [ "filter_message", "%{BIND9}" ]
+      match => { "filter_message" => "%{BIND9}" }
+      tag_on_failure => [ "_pfelk_bind9_parse_failure" ]
     }
   }
-  ### ntpd ###
+
+  ### ntpd ######################################################################
   if [log][syslog][appname] =~ /^ntpd/ {
     mutate {
-      add_tag => "ntpd"
-      add_field => { "[event][dataset]" => "pfelk.ntpd" }
+      add_tag => [ "ntpd" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.ntpd"
+      }
     }
   }
-  ### php-fpm ###
+
+  ### php-fpm / webConfigurator #################################################
   if [log][syslog][appname] =~ /^php-fpm/ {
     mutate {
-      add_tag => "web_portal"
-      add_field => { "[event][dataset]" => "pfelk.webportal" }
+      add_tag => [ "web_portal" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.webportal"
+      }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{PF_APP} %{PF_APP_DATA}" }
+      tag_on_failure => [ "_pfelk_webportal_parse_failure" ]
     }
-    mutate {
-      lowercase => [ "[pf][app][action]" ]
+    if [pf][app][action] {
+      mutate {
+        lowercase => [ "[pf][app][action]" ]
+      }
     }
   }
-  ### snort ###
+
+  ### Snort #####################################################################
   if [log][syslog][appname] =~ /^snort/ {
     mutate {
-      add_tag => "snort"
-      add_field => { "[event][dataset]" => "pfelk.snort" }
-      add_field => { "[event][category]" => "intrusion_detection" }
-      add_field => { "[agent][type]" => "snort" }
+      add_tag => [ "snort" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.snort"
+        "[event][kind]" => "alert"
+        "[event][category]" => "intrusion_detection"
+        "[observer][type]" => "ids"
+        "[observer][product]" => "Snort"
+      }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{SNORT}" ]
+      match => { "filter_message" => "%{SNORT}" }
+      tag_on_failure => [ "_pfelk_snort_parse_failure" ]
+    }
+    if [network][transport] {
+      mutate { lowercase => [ "[network][transport]" ] }
     }
   }
-  ### suricata ###
-  if [log][syslog][appname] =~ /^suricata$/ {
+
+  ### Suricata ##################################################################
+  if [log][syslog][appname] == "suricata" {
     if [filter_message] =~ /^{.*}$/ {
       json {
         source => "filter_message"
         target => "[suricata][eve]"
-        add_tag => "suricata_json"
+        skip_on_invalid_json => true
+        add_tag => [ "suricata_json" ]
+        tag_on_failure => [ "_pfelk_suricata_json_failure" ]
       }
     }
+
     if [suricata][eve][src_ip] and ![source][ip] {
-      mutate {
-        add_field => { "[source][ip]" => "%{[suricata][eve][src_ip]}" }
-      }
+      mutate { copy => { "[suricata][eve][src_ip]" => "[source][ip]" } }
     }
     if [suricata][eve][dest_ip] and ![destination][ip] {
-      mutate {
-        add_field => { "[destination][ip]" => "%{[suricata][eve][dest_ip]}" }
-      }
+      mutate { copy => { "[suricata][eve][dest_ip]" => "[destination][ip]" } }
     }
     if [suricata][eve][src_port] and ![source][port] {
-      mutate {
-        add_field => { "[source][port]" => "%{[suricata][eve][src_port]}" }
-      }
+      mutate { copy => { "[suricata][eve][src_port]" => "[source][port]" } }
+      mutate { convert => { "[source][port]" => "integer" } }
     }
     if [suricata][eve][dest_port] and ![destination][port] {
+      mutate { copy => { "[suricata][eve][dest_port]" => "[destination][port]" } }
+      mutate { convert => { "[destination][port]" => "integer" } }
+    }
+    if [suricata][eve][proto] and ![network][transport] {
+      mutate { copy => { "[suricata][eve][proto]" => "[network][transport]" } }
+      mutate { lowercase => [ "[network][transport]" ] }
+    }
+
+    # Map alert-specific EVE fields without manufacturing threat-intel data.
+    if [suricata][eve][alert] {
       mutate {
-        add_field => { "[destination][port]" => "%{[suricata][eve][dest_port]}" }
-        add_field => { "[threatintel][indicator][ip]" => "%{[source][ip]} %{[suricata][eve][http][url]}" }
+        add_field => {
+          "[event][kind]" => "alert"
+          "[event][category]" => "intrusion_detection"
+        }
+      }
+      if [suricata][eve][alert][signature_id] and ![rule][id] {
+        mutate {
+          add_field => {
+            "[rule][id]" => "%{[suricata][eve][alert][signature_id]}"
+          }
+        }
+      }
+      if [suricata][eve][alert][signature] and ![rule][name] {
+        mutate { copy => { "[suricata][eve][alert][signature]" => "[rule][name]" } }
+      }
+      if [suricata][eve][alert][category] and ![rule][category] {
+        mutate { copy => { "[suricata][eve][alert][category]" => "[rule][category]" } }
+      }
+      if [suricata][eve][alert][rev] and ![rule][version] {
+        mutate {
+          add_field => {
+            "[rule][version]" => "%{[suricata][eve][alert][rev]}"
+          }
+        }
+      }
+      if [suricata][eve][alert][severity] and ![event][severity] {
+        mutate { copy => { "[suricata][eve][alert][severity]" => "[event][severity]" } }
+        mutate { convert => { "[event][severity]" => "integer" } }
+      }
+    } else {
+      mutate {
+        add_field => {
+          "[event][kind]" => "event"
+          "[event][category]" => "network"
+        }
       }
     }
+
     if "suricata_json" not in [tags] {
       grok {
         patterns_dir => [ "/etc/pfelk/patterns" ]
-        match => [ "filter_message", "%{SURICATA}" ]
+        match => { "filter_message" => "%{SURICATA}" }
+        tag_on_failure => [ "_pfelk_suricata_parse_failure" ]
       }
-    }
-    mutate {
-      remove_tag => "suricata_json"
-      add_tag => "suricata"
-      add_field => { "[event][dataset]" => "pfelk.suricata" }
-    }
-  }
-  ### squid ###
-  if [log][syslog][appname] == "(squid-1)" {
-    mutate {
-      replace => [ "[log][syslog][appname]", "squid" ]
-      add_field => { "[event][dataset]" => "pfelk.squid" }
-    }
-    if [filter_message] =~ /^{.*}$/ {
-      json {
-        source => "filter_message"
-        add_tag => "squid_json"
-      }
-    }
-    if "squid_json" not in [tags] {
-      grok {
-        patterns_dir => [ "/etc/pfelk/patterns" ]
-        match => [ "filter_message", "%{SQUID}" ]
-      }  
-    }    
-  ### squid ECS => Built-in SIEM JSON ###
-    if "squid_json" in [tags] {
-      grok {
-        match => [ "[url][original]", "%{URIPROTO}://%{URIHOST:referer_domain}%{GREEDYDATA:[url][path]}" ]
-      }
-      mutate {
-        rename => { "[http][response][body][status_code]" => "[http][response][status_code]" }
-        rename => { "referer_domain" => "[url][domain]" }
-      }
-    }
-    mutate {
-      remove_tag => "squid_json"
-      add_tag => "squid"
-    }
-  }
-  ### unbound ###
-  if [log][syslog][appname] =~ /^unbound/ {
-    mutate {
-      add_tag => "unbound"
-      add_field => { "[event][dataset]" => "pfelk.unbound" }
-    }
-    grok {
-      patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => [ "filter_message", "%{UNBOUND}" ]
-    }
-  ### unbound ECS => Built-in SIEM ###
-    grok { 
-      match => [ "[dns][question][name]", "(\.)?(?<[dns][question][registered_domain]>[^.]+\.[^.]+)$" ] 
-      add_tag => "unbound-registered_domain"
-    }
-    if "unbound-registered_domain" not in [tags] {
-      grok { 
-        match => [ "[dns][question][name]", "(?<[dns][question][registered_domain]>[^.]+\.[^.]+)$" ] 
-      }
-    }
-    grok {
-      match => [ "[dns][question][name]", "(\.)?(?<[dns][question][top_level_domain]>[^.]+)$" ]
     }
 
     mutate {
-      remove_tag => "unbound-registered_domain"
+      remove_tag => [ "suricata_json" ]
+      add_tag => [ "suricata" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.suricata"
+        "[observer][type]" => "ids"
+        "[observer][product]" => "Suricata"
+      }
     }
+  }
+
+  ### Squid #####################################################################
+  if [log][syslog][appname] == "(squid-1)" or [log][syslog][appname] =~ /^squid/ {
+    mutate {
+      replace => { "[log][syslog][appname]" => "squid" }
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.squid"
+      }
+    }
+
+    # Retain current root JSON behavior for backward compatibility with the
+    # existing Squid JSON schema/dashboard. Non-JSON records use the Grok parser.
+    if [filter_message] =~ /^{.*}$/ {
+      json {
+        source => "filter_message"
+        ecs_compatibility => "disabled"
+        skip_on_invalid_json => true
+        add_tag => [ "squid_json" ]
+        tag_on_failure => [ "_pfelk_squid_json_failure" ]
+      }
+    }
+
+    if "squid_json" not in [tags] {
+      grok {
+        patterns_dir => [ "/etc/pfelk/patterns" ]
+        match => { "filter_message" => "%{SQUID}" }
+        tag_on_failure => [ "_pfelk_squid_parse_failure" ]
+      }
+    }
+
+    # Backward compatibility for existing built-in Squid JSON field layout.
+    if "squid_json" in [tags] {
+      if [url][original] {
+        grok {
+          match => {
+            "[url][original]" => "%{URIPROTO:[url][scheme]}://%{URIHOST:referer_domain}%{GREEDYDATA:[url][path]}"
+          }
+          tag_on_failure => [ "_pfelk_squid_url_parse_failure" ]
+        }
+      }
+      mutate {
+        rename => {
+          "[http][response][body][status_code]" => "[http][response][status_code]"
+          "referer_domain" => "[url][domain]"
+        }
+      }
+    }
+
+    mutate {
+      remove_tag => [ "squid_json" ]
+      add_tag => [ "squid" ]
+    }
+  }
+
+  ### Unbound ###################################################################
+  if [log][syslog][appname] =~ /^unbound/ {
+    mutate {
+      add_tag => [ "unbound" ]
+      add_field => {
+        "[event][module]" => "pfelk"
+        "[event][dataset]" => "pfelk.unbound"
+        "[event][kind]" => "event"
+        "[event][category]" => "network"
+        "[event][type]" => "protocol"
+        "[network][protocol]" => "dns"
+      }
+    }
+
+    grok {
+      patterns_dir => [ "/etc/pfelk/patterns" ]
+      match => { "filter_message" => "%{UNBOUND}" }
+      tag_on_failure => [ "_pfelk_unbound_parse_failure" ]
+    }
+
+    # Modern Unbound emits "query:" and "reply:". ECS calls the completed
+    # response/exchange an "answer".
+    if [dns][type] == "reply" {
+      mutate {
+        update => { "[dns][type]" => "answer" }
+      }
+    } else if ![dns][type] {
+      # Legacy pfELK Unbound pattern represents a query record.
+      mutate {
+        add_field => { "[dns][type]" => "query" }
+      }
+    }
+
+    # Do not derive registered_domain/top_level_domain by taking the final one
+    # or two labels; that is incorrect for public suffixes such as co.uk.
   }
 }
