@@ -1,8 +1,8 @@
 # 02-firewall.pfelk
 ################################################################################
-# Version: 23.09                                                               #
+# Version: 26.10                                                               #
 # Required: True                                                               #
-# Description: Enriches pf (firewall) logs (OPNsense/pfSense) 		       #
+# Description: Enriches pf (firewall) logs (OPNsense/pfSense) 		           #
 #                                                                              #
 ################################################################################
 #
@@ -156,14 +156,14 @@ filter {
 	update => { "[network][type]" => "ipv6" }
       }
     }
-    if [network][direction] =~ /^in$/ {
+    if [network][direction] == "in" {
       mutate {
 	update => { "[network][direction]" => "ingress" }
       }
     }
-    if [network][type] =~ /^out$/ {
+    if [network][type] == "out" {
       mutate {
-	update => { "[network][type]" => "egress" }
+	update => { "[network][direction]" => "egress" }
       }
     }
   }
