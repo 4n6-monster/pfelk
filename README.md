@@ -65,7 +65,6 @@ Supported entries include:
 #### docker-compose
  * [Manual Method](https://github.com/pfelk/pfelk/blob/main/install/docker.md) or [Scripted Installed](#) - Scripted Method Coming Soon
  * `$ docker-compose up`
- * [![YouTube](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=MJVbLvdVtyY) Guide (Update Coming Soon
 
 #### script installation method
 * Download installer script from [pfelk](https://raw.githubusercontent.com/pfelk/pfelk/main/etc/pfelk/scripts/pfelk-installer.sh) repository
@@ -77,13 +76,11 @@ Supported entries include:
 * Configure Security [here](https://github.com/pfelk/pfelk/blob/main/install/security.md)
 * Templates [here](https://github.com/pfelk/pfelk/blob/main/install/templates.md)
 * Finish Configuring [here](https://github.com/pfelk/pfelk/blob/main/install/configuration.md)
-* [![YouTube](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=qcGcsQQoPo0) Guide
 
 #### manual installation method
 * [Ubuntu 20.04-22.04](https://github.com/pfelk/pfelk/blob/main/install/preparation.md)
 * [Debian 11-12](https://github.com/pfelk/pfelk/blob/main/install/preparation.md)
 * [Docker](https://github.com/pfelk/pfelk/blob/main/install/docker.md)
-* [![YouTube](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=_IJAAUqNVRc) Guide
 
 ### Roadmap
 This is the experimental public roadmap for the pfelk project.
