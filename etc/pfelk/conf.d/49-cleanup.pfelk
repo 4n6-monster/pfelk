@@ -1,45 +1,74 @@
-#49-cleanup.pfelk
+# 49-cleanup.pfelk
 ################################################################################
-# Version: 24.09a                                                              #
+# Version: 26.10                                                               #
 # Required: False - Recommended                                                #
-# Description: Removed unwanted logs based on the process.pid field and        #
-# additional fields. Additionally, pf.tcp.options is split (multiple values).  #
-# Ameneds log.syslog.appname for openvpn value based on tag to openvpn.        #
+# Description: Removes parser working fields and normalizes multi-value fields. #
 ################################################################################
-#
-# 
+
 filter {
-### Drops logs based on priority - amend as desired ###
-#  if [log][syslog][priority] in ["78", "46", "45", "43"] {
-#	drop { }
-#  }
-### Mutates log.syslog.appname value to openvpn based on openvpn tag allowing ###
-#  if "openvpn" in [tags] {
-#    mutate {
-#      replace => [ "[log][syslog][appname]", "openvpn" ]
-#    }
-#  }
-### Split multiple values witin pf.tcp.options ###
-   mutate {
-     remove_field => ["filter_message", "pfelk", "pfelk_csv"]
-     split => { "[pf][tcp][options]" => ";" }
-     split => { "[openvpn][client][sso]" => "," }
-     split => { "[openvpn][client][ciphers]" => ":" }
-     rename => { "message" => "[event][original]" }
-   }
- ### Split multiple values wihtin pf.tcp.sequence_number ###
-  ruby {
-    code => '
-      if event.get("[pf][tcp][sequence_number]")
-        sequence_number = event.get("[pf][tcp][sequence_number]")
-        if sequence_number.include?(":")
-          start_num, end_num = sequence_number.split(":")
-          event.set("[pf][tcp][sequence_number]", start_num.to_i)
-          event.set("[pf][tcp][sequence_number_range_end]", end_num.to_i)
-        else
-          event.set("[pf][tcp][sequence_number]", sequence_number.to_i)
-        end
-      end
-    '
+  ### Optional priority-based dropping ##########################################
+  # if [log][syslog][priority] in [78, 46, 45, 43] {
+  #   drop { }
+  # }
+
+  ### Normalize multi-value fields #############################################
+  if [pf][tcp][options] and [pf][tcp][options] != "" {
+    mutate {
+      split => { "[pf][tcp][options]" => ";" }
+    }
+  }
+
+  if [openvpn][client][sso] and [openvpn][client][sso] != "" {
+    mutate {
+      split => { "[openvpn][client][sso]" => "," }
+    }
+  }
+
+  if [openvpn][client][ciphers] and [openvpn][client][ciphers] != "" {
+    mutate {
+      split => { "[openvpn][client][ciphers]" => ":" }
+    }
+  }
+
+  ### Normalize pf TCP sequence ranges without invoking Ruby for every event ####
+  if [pf][tcp][sequence_number] =~ /:/ {
+    dissect {
+      mapping => {
+        "[pf][tcp][sequence_number]" => "%{[pf][tcp][sequence_number_start]}:%{[pf][tcp][sequence_number_range_end]}"
+      }
+      tag_on_failure => [ "_pfelk_tcp_sequence_parse_failure" ]
+    }
+
+    if [pf][tcp][sequence_number_start] {
+      mutate {
+        remove_field => [ "[pf][tcp][sequence_number]" ]
+        rename => {
+          "[pf][tcp][sequence_number_start]" => "[pf][tcp][sequence_number]"
+        }
+      }
+      mutate {
+        convert => {
+          "[pf][tcp][sequence_number]" => "integer"
+          "[pf][tcp][sequence_number_range_end]" => "integer"
+        }
+      }
+    }
+  } else if [pf][tcp][sequence_number] {
+    mutate {
+      convert => { "[pf][tcp][sequence_number]" => "integer" }
+    }
+  }
+
+  ### Remove parser working fields #############################################
+  # event.original was captured in 01-inputs before parsing, so message can now
+  # be safely removed without losing the original evidence.
+  mutate {
+    remove_field => [
+      "message",
+      "filter_message",
+      "captiveportalmessage",
+      "pfelk",
+      "pfelk_csv"
+    ]
   }
 }
