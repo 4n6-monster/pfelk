@@ -1,17 +1,25 @@
 # logstash.yml
 ################################################################################
-# Version: 23.08                                                               #
+# Version: 26.10                                                               #
 # Required: True (Docker)                                                      #
-# Description: This is a required file for a Docker installation               #
-#                                                                              #
+# Description: Logstash runtime settings for pfELK.                            #
 ################################################################################
-#
-http.host: "0.0.0.0"
-#path.config: /usr/share/logstash/pipeline/pipelines.yml
-xpack.monitoring.elasticsearch.hosts: [ "https://es01:9200" ]
-xpack.monitoring.elasticsearch.username: elastic
-xpack.monitoring.elasticsearch.password: changeme
-xpack.monitoring.elasticsearch.ssl.certificate_authority: /usr/share/logstash/config/certs/ca/ca.crt
 
-## X-Pack security credentials
-xpack.monitoring.enabled: true
+# The API is local-only by default. Override only when a secured remote API is
+# explicitly required.
+api.http.host: "${PFELK_LOGSTASH_API_HOST:127.0.0.1}"
+
+# Durable buffering protects short Elasticsearch interruptions.
+queue.type: persisted
+queue.max_bytes: "${PFELK_QUEUE_SIZE:2gb}"
+queue.compression: balanced
+
+# Preserve events rejected by supported outputs because of mapping/index errors.
+dead_letter_queue.enable: true
+dead_letter_queue.max_bytes: "${PFELK_DLQ_SIZE:1gb}"
+dead_letter_queue.storage_policy: drop_older
+
+# Stack Monitoring credentials were previously hard-coded here. Keep legacy
+# X-Pack monitoring disabled by default and use Elastic Agent/OTel or explicitly
+# configure monitoring credentials if Stack Monitoring is required.
+xpack.monitoring.enabled: false
