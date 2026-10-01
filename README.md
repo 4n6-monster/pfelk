@@ -2,8 +2,6 @@
 
 [![](https://dcbadge.vercel.app/api/server/h3DJs2Kj8k)](https://discord.gg/h3DJs2Kj8k)
 
-[![YouTube](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/3ilson)
-
 # Elastic Integration
 - https://docs.elastic.co/en/integrations/pfsense
 
