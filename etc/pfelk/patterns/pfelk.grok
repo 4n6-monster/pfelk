@@ -1,31 +1,27 @@
 # pfelk.grok
 ################################################################################
-# Version: 24.09                                                               #
-#                                                                              #
-#                                                                              #
-#                                                                              #
+# Version: 26.10                                                               #
+# Core pfSense/OPNsense and application Grok patterns for pfELK.                #
 ################################################################################
-#
-#
-# PFELK
-PFELK (%{PFSENSE}|%{OPNSENSE}|%{RFC5424})
 
-# pfSense | OPNsense
-PFSENSE %{SYSLOGTIMESTAMP:[event][created]}\s(%{SYSLOGHOST:[log][syslog][hostname]}\s)?%{PROG:[log][syslog][appname]}(\[%{POSINT:[log][syslog][procid]:int}\])?\:\s%{GREEDYDATA:filter_message}
-OPNSENSE %{SYSLOGTIMESTAMP:[event][created]}\s%{SYSLOGHOST:[log][syslog][hostname]}\s%{PROG:[log][syslog][appname]}\[%{POSINT:[log][syslog][procid]}\]\:\s%{GREEDYDATA:filter_message}
+# PFELK syslog header
+PFELK (%{RFC5424}|%{OPNSENSE}|%{PFSENSE})
 
-# OPNsense||pfSense RFC5424
-RFC5424 (%{INT:[log][syslog][version]}\s*)%{TIMESTAMP_ISO8601:[event][created]}\s%{SYSLOGHOST:[log][syslog][hostname]}\s%{PROG:[log][syslog][appname]}(\s%{POSINT:[log][syslog][procid]})?(\s\-\s\-\s?(\-\s)?)?(\s\-\s\[meta\ssequenceId\=(\\)?\"%{NUMBER:[event][sequence]}(\\)?\"\])?\s%{GREEDYDATA:filter_message}
+# pfSense / OPNsense RFC3164
+PFSENSE %{SYSLOGTIMESTAMP:[pfelk][timestamp]}\s(%{SYSLOGHOST:[log][syslog][hostname]}\s)?%{PROG:[log][syslog][appname]}(\[%{POSINT:[log][syslog][procid]:int}\])?\:\s%{GREEDYDATA:filter_message}
+OPNSENSE %{SYSLOGTIMESTAMP:[pfelk][timestamp]}\s%{SYSLOGHOST:[log][syslog][hostname]}\s%{PROG:[log][syslog][appname]}\[%{POSINT:[log][syslog][procid]:int}\]\:\s%{GREEDYDATA:filter_message}
+
+# OPNsense / pfSense RFC5424
+RFC5424 (%{INT:[log][syslog][version]:int}\s*)%{TIMESTAMP_ISO8601:[pfelk][timestamp]}\s%{SYSLOGHOST:[log][syslog][hostname]}\s%{PROG:[log][syslog][appname]}(\s%{POSINT:[log][syslog][procid]:int})?(\s\-\s\-\s?(\-\s)?)?(\s\-\s\[meta\ssequenceId\=(\\)?\"%{NUMBER:[event][sequence]}(\\)?\"\])?\s%{GREEDYDATA:filter_message}
 
 # CAPTIVE PORTAL (Optional)
 CAPTIVEPORTAL (%{CP_PFSENSE}|%{CP_OPNSENSE})
-CP_OPNSENSE %{WORD:[event][action]}\s%{GREEDYDATA:[client][user][name]}\s\(%{IP:[client][ip]}\)\s%{WORD:[observer][ingress][interface][alias]}\s%{INT:[observer][ingress][zone]}
-# ToDo - Clean-up pfSense GROK pattern below
+CP_OPNSENSE %{WORD:[event][action]}\s%{GREEDYDATA:[client][user][name]}\s\(%{IP:[client][ip]}\)\s%{WORD:[observer][ingress][interface][alias]}\s%{INT:[observer][ingress][zone]:int}
 CP_PFSENSE (%{CAPTIVE1}|%{CAPTIVE2})
 CAPTIVE1 %{WORD:[observer][ingress][interface][alias]}:\s%{DATA:[observer][ingress][zone]}\s\-\s%{WORD:[event][action]}\:\s%{GREEDYDATA:[client][user][name]},\s%{MAC:[client][mac]},\s%{IP:[client][ip]}(,\s%{GREEDYDATA:[event][reason]})?
 CAPTIVE2 %{WORD:[observer][ingress][interface][alias]}:\s%{DATA:[observer][ingress][zone]}\s\-\s%{GREEDYDATA:[event][action]}\:\s%{GREEDYDATA:[client][user][name]},\s%{MAC:[client][mac]},\s%{IP:[client][ip]}(,\s%{GREEDYDATA:[event][reason]})?
 
-# DHCPv4 (Optional) - DEPRECIATED
+# DHCPv4 (Optional) - DEPRECATED
 DHCPD DHCP(%{DHCPD_DISCOVER}|%{DHCPD_DUPLICATE}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM}|%{DHCPD_LEASE})|%{DHCPD_REUSE}|%{DHCPDv6}|(%{GREEDYDATA:[DHCPD][message]})?
 DHCPD_DISCOVER (?<[dhcp][operation]>DISCOVER) from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
 DHCPD_DECLINE (?<[dhcp][operation]>DECLINE) of %{IP:[dhcpv4][client][ip]} from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
@@ -36,36 +32,36 @@ DHCPD_OFFER_ACK (?<[dhcp][operation]>(OFFER|N?ACK)) on %{IP:[dhcpv4][client][ip]
 DHCPD_RELEASE (?<[dhcp][operation]>RELEASE) of %{IP:[dhcpv4][client][ip]} from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA} \((?<dhcpd_release>(not )?found)\)
 DHCPD_REQUEST (?<[dhcp][operation]>REQUEST) for %{IP:[dhcpv4][client][ip]}( \(%{DATA:[dhcpv4][server][ip]}\))? from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
 DHCPD_VIA via (%{IP:[dhcpv4][relay][ip]}|(?<[interface][name]>[^: ]+))
-DHCPD_REUSE (?<[dhcpv4][operation]>reuse_lease): lease age %{INT:[dhcpv4][lease][duration]}.* lease for %{IPV4:[dhcpv4][client][ip]}
+DHCPD_REUSE (?<[dhcpv4][operation]>reuse_lease): lease age %{INT:[dhcpv4][lease][duration]:int}.* lease for %{IPV4:[dhcpv4][client][ip]}
 
-# DHCPv6 (Optional) - DEPRECIATED
+# DHCPv6 (Optional) - DEPRECATED
 DHCPDv6 (%{DHCPv6_REPLY}|%{DHCPv6_ACTION}|%{DHCPv6_REUSE})
-DHCPv6_REPLY (?<[dhcpv6][operation]>Advertise|Reply) NA: address %{IP:[dhcpv6][client][ip]} to client with duid %{GREEDYDATA:[dhcpv6][duid]}\siaid\s\=\s%{INT:[dhcpv6][iaid]} valid for %{INT:[dhcpv6][lease][duration]} seconds
-DHCPv6_ACTION (?<[dhcpv6][operation]>(Request|Picking|Sending Reply|Sending Advertise|Confirm|Solicit|Renew))(\s)?(message)?(\s)?(to|from)?(\s)?(pool address)? %{IP:[dhcpv6][client][ip]}(\s)?(port %{INT:[dhcpv6][client][port]})?(, transaction ID %{BASE16FLOAT:[dhcpv6][transaction][id]})?
-DHCPv6_REUSE (?<[dhcpv6][operation]>Reusing lease) for: %{IPV6:[dhcpv6][client][ip]}, age %{INT:[dhcpv6][lease][age][length]}.*preferred: %{INT:[dhcpv6][lease][age][preferred]}, valid %{INT:[dhcpv6][lease][age][valid]}
+DHCPv6_REPLY (?<[dhcpv6][operation]>Advertise|Reply) NA: address %{IP:[dhcpv6][client][ip]} to client with duid %{GREEDYDATA:[dhcpv6][duid]}\siaid\s\=\s%{INT:[dhcpv6][iaid]:int} valid for %{INT:[dhcpv6][lease][duration]:int} seconds
+DHCPv6_ACTION (?<[dhcpv6][operation]>(Request|Picking|Sending Reply|Sending Advertise|Confirm|Solicit|Renew))(\s)?(message)?(\s)?(to|from)?(\s)?(pool address)? %{IP:[dhcpv6][client][ip]}(\s)?(port %{INT:[dhcpv6][client][port]:int})?(, transaction ID %{BASE16FLOAT:[dhcpv6][transaction][id]})?
+DHCPv6_REUSE (?<[dhcpv6][operation]>Reusing lease) for: %{IPV6:[dhcpv6][client][ip]}, age %{INT:[dhcpv6][lease][age][length]:int}.*preferred: %{INT:[dhcpv6][lease][age][preferred]:int}, valid %{INT:[dhcpv6][lease][age][valid]:int}
 
 # HAPROXY
 HA_PROXY (%{HAPROXY}|%{HAPROXY_TCP})
-HAPROXY %{IP:[client][ip]}:%{INT:[client][port]:int} \[%{HAPROXYDATE:[haproxy][timestamp]}\] %{NOTSPACE:[haproxy][frontend_name]} %{NOTSPACE:[haproxy][backend_name]}/%{NOTSPACE:[haproxy][server_name]} %{INT:[haproxy][time_request]}/%{INT:[haproxy][time_queue]}/%{INT:[haproxy][time_backend_connect]:int}/%{INT:[haproxy][time_backend_response]:int}/%{NOTSPACE:[host][uptime]} %{INT:[http][response][status_code]:int} %{NOTSPACE:[haproxy][bytes_read]:int} %{DATA:[haproxy][http][request][captured_cookie]} %{DATA:[haproxy][http][response][captured_cookie]} %{NOTSPACE:[haproxy][termination_state]} %{INT:[haproxy][connections][active]:int}/%{INT:[haproxy][connections][frontend]:int}/%{INT:[haproxy][connections][backend]:int}/%{INT:[haproxy][connections][server]:int}/%{NOTSPACE:[haproxy][connections][retries]:int} %{INT:[haproxy][server_queue]:int}/%{INT:[haproxy][backend_queue]:int} (\{%{HAPROXYCAPTUREDREQUESTHEADERS}\})?( )?(\{%{HAPROXYCAPTUREDRESPONSEHEADERS}\})?( )?"(<BADREQ>|(%{WORD:[http][request][method]} (%{URIPROTO:[haproxy][mode]}://)?(?:%{USER:[user][name]}(?::[^@]*)?@)?(?:%{URIHOST:[http][request][referrer]})?(?:%{URIPATHPARAM:[http][mode]})?( HTTP/%{NUMBER:[http][version]})?))?"?
-HAPROXY_TCP %{IP:[haproxy][client][ip]}:%{INT:[haproxy][client][port]:int} [%{HAPROXYDATE:haproxy_timestamp}] %{NOTSPACE:[haproxy][frontend_name]} %{NOTSPACE:[haproxy][backend_name]}/%{NOTSPACE:[haproxy][server_name]} %{INT:[haproxy][time_request]:int}/%{INT:[haproxy][time_queue]:int}/%{INT:[haproxy][time_backend_connect]:int} %{INT:[haproxy][time_backend_response]:int}%{NOTSPACE:[haproxy][time_duration]}%{INT:[haproxy][http_status_code]:int} %{NOTSPACE:[haproxy][bytes_read]} %{DATA:[haproxy][captured_request_cookie]}%{DATA:[haproxy][captured_response_cookie]} %{NOTSPACE:[haproxy][termination_state]}
+HAPROXY %{IP:[client][ip]}:%{INT:[client][port]:int} \[%{HAPROXYDATE:[haproxy][timestamp]}\] %{NOTSPACE:[haproxy][frontend_name]} %{NOTSPACE:[haproxy][backend_name]}/%{NOTSPACE:[haproxy][server_name]} %{INT:[haproxy][time_request]:int}/%{INT:[haproxy][time_queue]:int}/%{INT:[haproxy][time_backend_connect]:int}/%{INT:[haproxy][time_backend_response]:int}/%{INT:[haproxy][time_total]:int} %{INT:[http][response][status_code]:int} %{INT:[haproxy][bytes_read]:int} %{DATA:[haproxy][http][request][captured_cookie]} %{DATA:[haproxy][http][response][captured_cookie]} %{NOTSPACE:[haproxy][termination_state]} %{INT:[haproxy][connections][active]:int}/%{INT:[haproxy][connections][frontend]:int}/%{INT:[haproxy][connections][backend]:int}/%{INT:[haproxy][connections][server]:int}/%{INT:[haproxy][connections][retries]:int} %{INT:[haproxy][server_queue]:int}/%{INT:[haproxy][backend_queue]:int} (\{%{HAPROXYCAPTUREDREQUESTHEADERS}\})?( )?(\{%{HAPROXYCAPTUREDRESPONSEHEADERS}\})?( )?"(<BADREQ>|(%{WORD:[http][request][method]} (%{URIPROTO:[haproxy][mode]}://)?(?:%{USER:[user][name]}(?::[^@]*)?@)?(?:%{URIHOST:[http][request][referrer]})?(?:%{URIPATHPARAM:[http][mode]})?( HTTP/%{NUMBER:[http][version]})?))?"?
+HAPROXY_TCP %{IP:[client][ip]}:%{INT:[client][port]:int} \[%{HAPROXYDATE:[haproxy][timestamp]}\] %{NOTSPACE:[haproxy][frontend_name]} %{NOTSPACE:[haproxy][backend_name]}/%{NOTSPACE:[haproxy][server_name]} %{INT:[haproxy][time_queue]:int}/%{INT:[haproxy][time_backend_connect]:int}/%{INT:[haproxy][time_total]:int} %{INT:[haproxy][bytes_read]:int} %{NOTSPACE:[haproxy][termination_state]} %{INT:[haproxy][connections][active]:int}/%{INT:[haproxy][connections][frontend]:int}/%{INT:[haproxy][connections][backend]:int}/%{INT:[haproxy][connections][server]:int}/%{INT:[haproxy][connections][retries]:int} %{INT:[haproxy][server_queue]:int}/%{INT:[haproxy][backend_queue]:int}
 
 # KEA-DHCP
 KEADHCP4 (%{KEADHCP_REBOOT}|%{KEADHCP_ADVERT}|%{KEADHCP_ALLOC}|%{KEADHCP_EXECUTE})
-KEADHCP_REBOOT (?<[kea][dhcp][operation]>REBOOT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}.*(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
-KEADHCP_ADVERT (?<[kea][dhcp][operation]>ADVERT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
-KEADHCP_ALLOC (?<[kea][dhcp][operation]>ALLOC)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]}).*%{NUMBER:[kea][dhcp][lease][duration]}
+KEADHCP_REBOOT (?<[kea][dhcp][operation]>REBOOT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}.*(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
+KEADHCP_ADVERT (?<[kea][dhcp][operation]>ADVERT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
+KEADHCP_ALLOC (?<[kea][dhcp][operation]>ALLOC)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]}).*%{NUMBER:[kea][dhcp][lease][duration]}
 KEADHCP_EXECUTE (?<[kea][dhcp][operation]>EXECUTE)%{GREEDYDATA:[kea][message]}
 KEADHCP6 %{GREEDYDATA:filter_message}
 
 # NGINX
 NGINX %{NGINX_META}%{NGINX_LOG}(%{NGINX_EXT})?
 NGINX_META %{IPORHOST:[client][ip]}(\s\-\s)(%{USERNAME:[nginx][access][user_name]}|\-)?\s\[%{HTTPDATE:timestamp}\]\s*\"
-NGINX_LOG %{WORD:[nginx][access][method]}\s*%{NOTSPACE:[nginx][access][url]}\s*HTTP/%{NUMBER:[nginx][access][http_version]}\"\s%{NUMBER:[nginx][access][response_code]}\s%{NUMBER:[nginx][access][body_sent][bytes]}\s"%{NOTSPACE:[nginx][access][referrer]}"\s"%{DATA:[nginx][access][agent]}"
+NGINX_LOG %{WORD:[nginx][access][method]}\s*%{NOTSPACE:[nginx][access][url]}\s*HTTP/%{NUMBER:[nginx][access][http_version]}\"\s%{INT:[nginx][access][response_code]:int}\s%{INT:[nginx][access][body_sent][bytes]:int}\s"%{NOTSPACE:[nginx][access][referrer]}"\s"%{DATA:[nginx][access][agent]}"
 NGINX_EXT (\s\"\-\"\s*)\"%{IPORHOST:[nginx][access][forwarder]}\"(%{NGINX_EXT_SN}%{NGINX_EXT_RT}%{NGINX_EXT_UA}%{NGINX_EXT_US}%{NGINX_EXT_UT}%{NGINX_EXT_UL})?
 NGINX_EXT_SN \s*sn=(\"%{HOSTNAME:[nginx][ingress_controller][upstream][name]}\"|"")
 NGINX_EXT_RT \s*rt=(%{NUMBER:[nginx][ingress_controller][http][request][time]}|"")
-NGINX_EXT_UA \s*ua=(("%{IP:[nginx][ingress_controller][upstream][ip]}:%{INT:[nginx][ingress_controller][upstream][port]}")|("-")|("%{NOTSPACE:[nginx][ingress_controller][upstream][socket]}"))\s*
-NGINX_EXT_US \s*us=(\"%{NUMBER:[nginx][ingress_controller][upstream][response][status_code]}\"|"-")
+NGINX_EXT_UA \s*ua=(("%{IP:[nginx][ingress_controller][upstream][ip]}:%{INT:[nginx][ingress_controller][upstream][port]:int}")|("-")|("%{NOTSPACE:[nginx][ingress_controller][upstream][socket]}"))\s*
+NGINX_EXT_US \s*us=(\"%{INT:[nginx][ingress_controller][upstream][response][status_code]:int}\"|"-")
 NGINX_EXT_UT \s*ut=(\"%{NUMBER:[nginx][ingress_controller][upstream][response][time]}\"|"-")
 NGINX_EXT_UL \s*ul=(\"%{NUMBER:[nginx][ingress_controller][upstream][response][length]}\"|"-")
 
@@ -82,20 +78,24 @@ PF_APP_GEN (%{GREEDYDATA:[pf][app][action]})
 
 # SURICATA
 SURICATA (%{SURICATA_LOG}|%{SURICATA_NOTICE})
-SURICATA_LOG \[%{NUMBER:[suricata][rule][uuid]}:%{NUMBER:[suricata][rule][id]}:%{NUMBER:[suricata][rule][version]}\]%{SPACE}%{GREEDYDATA:[suricata][rule][description]}%{SPACE}\[Classification:%{SPACE}%{GREEDYDATA:[suricata][rule][category]}\]%{SPACE}\[Priority:%{SPACE}%{NUMBER:[suricata][priority]}\]%{SPACE}{%{WORD:[network][transport]}}%{SPACE}%{IP:[source][ip]}:%{NUMBER:[source][port]}%{SPACE}->%{SPACE}%{IP:[destination][ip]}:%{NUMBER:[destination][port]}
+SURICATA_LOG \[%{INT:[suricata][generator_id]:int}:%{INT:[rule][id]}:%{INT:[rule][version]}\]\s+%{GREEDYDATA:[rule][name]}\s+\[Classification:\s*%{DATA:[rule][category]}\]\s+\[Priority:\s*%{INT:[event][severity]:int}\]\s+\{%{WORD:[network][transport]}\}\s+%{IP:[source][ip]}:%{INT:[source][port]:int}\s+->\s+%{IP:[destination][ip]}:%{INT:[destination][port]:int}
 SURICATA_NOTICE \[%{NUMBER:[event][code]}\]\s\<%{WORD:[event][action]}\>\s\-\-\s%{GREEDYDATA:[package][description]}
 
 # SNORT
-SNORT \[%{INT:[rule][uuid]}\:%{INT:[rule][reference]}\:%{INT:[rule][version]}\].%{GREEDYDATA:[vulnerability][description]}.\[Classification\: %{DATA:[vulnerability][classification]}\].\[Priority\: %{INT:[event][severity]}\].\{%{DATA:[network][transport]}\}.%{IP:[source][ip]}(\:%{INT:[source][port]})?.->.%{IP:[destination][ip]}(\:%{INT:[destination][port]})?
+SNORT \[%{INT:[snort][generator_id]:int}\:%{INT:[rule][id]}\:%{INT:[rule][version]}\]\s+%{GREEDYDATA:[rule][name]}\s+\[Classification\:\s*%{DATA:[rule][category]}\]\s+\[Priority\:\s*%{INT:[event][severity]:int}\]\s+\{%{DATA:[network][transport]}\}\s+%{IP:[source][ip]}(\:%{INT:[source][port]:int})?\s+\-\>\s+%{IP:[destination][ip]}(\:%{INT:[destination][port]:int})?
 
 # SQUID
-SQUID %{IPORHOST:[client][ip]} %{NOTSPACE:[labels][request_status]}/%{NUMBER:[http][response][body][status_code]} %{NUMBER:[http][response][bytes]} %{NOTSPACE:[http][request][method]} (%{URIPROTO:[url][scheme]}://)?(?<[url][domain]>\S+?)(:%{INT:[url][port]})?(/%{NOTSPACE:[url][path]})?\s+%{NOTSPACE:[http][request][referrer]}\s+%{NOTSPACE:[lables][hierarchy_status]}/%{NOTSPACE:[destination][address]}\s+%{NOTSPACE:[http][response][mime_type]}
+SQUID %{IPORHOST:[client][ip]} %{NOTSPACE:[labels][request_status]}/%{INT:[http][response][status_code]:int} %{INT:[http][response][bytes]:int} %{NOTSPACE:[http][request][method]} (%{URIPROTO:[url][scheme]}://)?(?<[url][domain]>\S+?)(:%{INT:[url][port]:int})?(/%{NOTSPACE:[url][path]})?\s+%{NOTSPACE:[http][request][referrer]}\s+%{NOTSPACE:[labels][hierarchy_status]}/%{NOTSPACE:[destination][address]}\s+%{NOTSPACE:[http][response][mime_type]}
 
 # UNBOUND
-UNBOUND %{INT:[process][pgid]}:%{INT:[process][thread][id]} %{LOGLEVEL:[log][level]}: %{IP:[client][ip]} %{GREEDYDATA:[dns][question][name]}\. %{WORD:[dns][question][type]} %{WORD:[dns][question][class]}
+# Modern OPNsense/Unbound: "[pid:thread] query:" and "[pid:thread] reply:"
+# Legacy pfELK: "pid:thread info: client domain. TYPE CLASS"
+UNBOUND (%{UNBOUND_MODERN_QUERY}|%{UNBOUND_MODERN_REPLY}|%{UNBOUND_LEGACY})
+UNBOUND_MODERN_QUERY \[%{INT:[process][pid]:int}:%{INT:[process][thread][id]:int}\]\s+(?<[dns][type]>query):\s+%{IP:[client][ip]}\s+%{DATA:[dns][question][name]}\.\s+%{WORD:[dns][question][type]}\s+%{WORD:[dns][question][class]}
+UNBOUND_MODERN_REPLY \[%{INT:[process][pid]:int}:%{INT:[process][thread][id]:int}\]\s+(?<[dns][type]>reply):\s+%{IP:[client][ip]}\s+%{DATA:[dns][question][name]}\.\s+%{WORD:[dns][question][type]}\s+%{WORD:[dns][question][class]}\s+%{WORD:[dns][response_code]}(?:\s+%{GREEDYDATA:[unbound][response_details]})?
+UNBOUND_LEGACY \[?%{INT:[process][pid]:int}:%{INT:[process][thread][id]:int}\]?\s+%{LOGLEVEL:[log][level]}:\s+%{IP:[client][ip]}\s+%{GREEDYDATA:[dns][question][name]}\.\s+%{WORD:[dns][question][type]}\s+%{WORD:[dns][question][class]}
 
-# [DEPRECIATED]
-# PF
+# [DEPRECATED] legacy filterlog Grok patterns retained for compatibility/testing
 PF_LOG_ENTRY %{PF_LOG_DATA}%{PF_IP_SPECIFIC_DATA}%{PF_IP_DATA}%{PF_PROTOCOL_DATA}?
 PF_LOG_DATA %{INT:[rule][ruleset]},%{INT:[rule][id]}?,,%{DATA:[rule][uuid]},%{DATA:[interface][name]},(?<[event][reason]>\b[\w\-]+\b),%{WORD:[event][action]},%{WORD:[network][direction]},
 PF_IP_SPECIFIC_DATA %{PF_IPv4_SPECIFIC_DATA}|%{PF_IPv6_SPECIFIC_DATA}
@@ -106,10 +106,10 @@ PF_IPv6_SPECIFIC_DATA (?<[network][type]>(6)),%{BASE16NUM:[pf][ipv6][class]},%{W
 PF_IPv6_VAR %{WORD:type},%{WORD:option},%{WORD:Flags},%{WORD:Flags}
 PF_IPv6_ICMP
 
-# PF PROTOCOL
+# PF protocol details - legacy
 PF_TCP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]},(?<[pf][tcp][flags]>(\w*)?),(?<[pf][tcp][sequence_number]>(\d*)?):?\d*,(?<[pf][tcp][ack_number]>(\d*)?),(?<[pf][tcp][window]>(\d*)?),(?<[pf][tcp][urg]>(\w*)?),%{GREEDYDATA:[pf][tcp][options]}
 PF_UDP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]}$
-PF_IGMP_DATA datalength=%{INT:[network][packets]}
+PF_IGMP_DATA datalength=%{INT:[pf][data_length]}
 PF_ICMP_DATA %{PF_ICMP_TYPE}%{PF_ICMP_RESPONSE}
 PF_ICMP_TYPE (?<icmp_type>(request|reply|unreachproto|unreachport|unreach|timeexceed|paramprob|redirect|maskreply|needfrag|tstamp|tstampreply)),
 PF_ICMP_RESPONSE %{PF_ICMP_ECHO_REQ_REPLY}|%{PF_ICMP_UNREACHPORT}|%{PF_ICMP_UNREACHPROTO}|%{PF_ICMP_UNREACHABLE}|%{PF_ICMP_NEED_FLAG}|%{PF_ICMP_TSTAMP}|%{PF_ICMP_TSTAMP_REPLY}
