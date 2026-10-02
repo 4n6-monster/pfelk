@@ -1,66 +1,71 @@
-# Version    | 22.04
-# Email      | https://github.com/pfelk/pfelk
-#
-echo "pfelk: Generating pfelk Error Data"
-#create log folder
-sudo mkdir /etc/pfelk/logs
-#remove any old pfelk error outputs
-sudo rm /etc/pfelk/logs/error.pfelk.log
-#create the new file
-sudo touch /etc/pfelk/logs/error.pfelk.log
-#add system information
-echo "#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# pfelk System Information ##########" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-printf "$(uname -srm)\n$(cat /etc/os-release)\n$(free -hm)\n" | cat >> /etc/pfelk/logs/error.pfelk.log
-#capture directory and files structure
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# Listing pfelk Directory Structure #" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-find /etc/pfelk/ | cat >> /etc/pfelk/logs/error.pfelk.log
-find /etc/logstash/ | cat >> /etc/pfelk/logs/error.pfelk.log
-find /var/lib/GeoIP/ | cat >> /etc/pfelk/logs/error.pfelk.log
-#capture all config files
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# pfelk Config File Details #########" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-cat /etc/pfelk/conf.d/*.pfelk >> /etc/pfelk/logs/error.pfelk.log
-#capture all config files
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# Logstash Config File Details #########" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-cat /etc/logstash/conf.d/*.pfelk >> /etc/pfelk/logs/error.pfelk.log
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# Listing Logstash Pipelines.yml #" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-cat /etc/logstash/pipelines.yml >> /etc/pfelk/logs/error.pfelk.log
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# Listing Logstash Logstash.yml Log Path #" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-cat /etc/logstash/logstash.yml | grep path.logs* >> /etc/pfelk/logs/error.pfelk.log
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# Listing Kibana kibana.yml Log Path #" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-cat /etc/kibana/kibana.yml | grep path.logs* >> /etc/pfelk/logs/error.pfelk.log
-#capture grok pattern
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# grok pattern #" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-cat /etc/pfelk/patterns/*.grok >> /etc/pfelk/logs/error.pfelk.log
-#attach logstash logs
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# Appending Logstash Logs ###########" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-tail -20 /var/log/logstash/logstash-plain.log | cat >> /etc/pfelk/logs/error.pfelk.log
-#capture systemctl status outputs to validate services running
-echo "\n#####################################" >> /etc/pfelk/logs/error.pfelk.log
-echo "# ELK Services Check ################" >> /etc/pfelk/logs/error.pfelk.log
-echo "#####################################\n" >> /etc/pfelk/logs/error.pfelk.log
-echo "\n###Elasticsearch.service:###\n" >> /etc/pfelk/logs/error.pfelk.log
-systemctl status elasticsearch.service -q | cat >> /etc/pfelk/logs/error.pfelk.log
-echo "\n###Logstash.service:###\n" >> /etc/pfelk/logs/error.pfelk.log
-systemctl status logstash.service -q | cat >> /etc/pfelk/logs/error.pfelk.log
-echo "\n###Kibana.service:###\n" >> /etc/pfelk/logs/error.pfelk.log
-systemctl status kibana.service -q | cat >> /etc/pfelk/logs/error.pfelk.log
-echo "Error Data Collected Successfully"
-echo "Attach the contents of /etc/pfelk/logs/error.pfelk.log as a file to attache and include with your issue in github"
+#!/usr/bin/env bash
+# Version | 26.10.0
+# Repository | https://github.com/4n6-monster/pfelk
+set -Eeuo pipefail
+umask 077
+
+OUT_DIR="${PFELK_SUPPORT_DIR:-/etc/pfelk/logs}"
+OUT="${OUT_DIR}/error.pfelk.log"
+mkdir -p "${OUT_DIR}"
+: > "${OUT}"
+
+section() {
+  printf '\n################################################################################\n' >> "${OUT}"
+  printf '# %s\n' "$1" >> "${OUT}"
+  printf '################################################################################\n' >> "${OUT}"
+}
+
+safe_cat() {
+  local f="$1"
+  [[ -r "${f}" ]] || return 0
+  printf '\n--- %s ---\n' "${f}" >> "${OUT}"
+  sed -E \
+    -e 's/((password|passwd|license[_ -]?key|api[_ -]?key|token)[^:=]*[:=][[:space:]]*)[^[:space:]]+/\1[REDACTED]/Ig' \
+    -e 's/(Authorization:[[:space:]]*(Basic|Bearer|ApiKey)[[:space:]]+)[^[:space:]]+/\1[REDACTED]/Ig' \
+    "${f}" >> "${OUT}"
+}
+
+section "pfELK support bundle"
+printf 'Generated: %s\n' "$(date --iso-8601=seconds)" >> "${OUT}"
+printf 'Hostname: %s\n' "$(hostname -f 2>/dev/null || hostname)" >> "${OUT}"
+
+section "Operating system"
+uname -a >> "${OUT}" 2>&1 || true
+cat /etc/os-release >> "${OUT}" 2>&1 || true
+free -h >> "${OUT}" 2>&1 || true
+df -h >> "${OUT}" 2>&1 || true
+
+section "pfELK file tree"
+find /etc/pfelk -maxdepth 3 -type f -printf '%p\n' 2>/dev/null | sort >> "${OUT}" || true
+
+section "Logstash configuration (redacted)"
+for f in /etc/pfelk/conf.d/*.pfelk /etc/pfelk/patterns/*.grok /etc/logstash/pipelines.yml /etc/logstash/logstash.yml; do
+  [[ -e "${f}" ]] && safe_cat "${f}"
+done
+
+section "Versions"
+dpkg-query -W -f='${Package}\t${Version}\n' elasticsearch logstash kibana 2>/dev/null >> "${OUT}" || true
+/usr/share/logstash/bin/logstash --version >> "${OUT}" 2>&1 || true
+
+section "Logstash config validation"
+PFELK_ES_PASSWORD='[REDACTED]' /usr/share/logstash/bin/logstash \
+  --path.settings /etc/logstash --config.test_and_exit >> "${OUT}" 2>&1 || true
+
+section "Service status"
+for svc in elasticsearch logstash kibana; do
+  printf '\n### %s ###\n' "${svc}" >> "${OUT}"
+  systemctl status "${svc}" --no-pager -l >> "${OUT}" 2>&1 || true
+done
+
+section "Recent Logstash journal"
+journalctl -u logstash -n 150 --no-pager >> "${OUT}" 2>&1 || true
+
+section "Listening sockets"
+ss -lntup >> "${OUT}" 2>&1 || true
+
+section "Kernel settings"
+sysctl vm.max_map_count >> "${OUT}" 2>&1 || true
+
+chmod 0600 "${OUT}"
+printf 'Support data created: %s\n' "${OUT}"
+printf 'Review the file before sharing. Automated redaction is best-effort, not a guarantee.\n'
