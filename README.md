@@ -2,6 +2,7 @@
 ![pfELK](https://img.shields.io/badge/pfELK-26.10.1-green.svg)
 
 # pfELK — pfSense/OPNsense + Elastic Stack
+![pfelk dashboard](https://raw.githubusercontent.com/pfelk/pfelk/main/Images/Dashboard%20-%20v61.gif)
 
 pfELK ingests, normalizes, enriches, and visualizes pfSense/OPNsense and related
 network-security logs with Elasticsearch, Logstash, and Kibana.
