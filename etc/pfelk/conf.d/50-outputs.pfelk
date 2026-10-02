@@ -10,6 +10,35 @@
 ################################################################################
 
 filter {
+  # Route known parser failures into a dedicated troubleshooting data stream.
+  # The original event is preserved by 01-inputs.pfelk.
+  if "_pfelk_syslog_priority_failure" in [tags] or
+     "_pfelk_header_parse_failure" in [tags] or
+     "_pfelk_date_parse_failure" in [tags] or
+     "_pfelk_captiveportal_parse_failure" in [tags] or
+     "_pfelk_dhcp_parse_failure" in [tags] or
+     "_pfelk_haproxy_parse_failure" in [tags] or
+     "_pfelk_kea_dhcp4_parse_failure" in [tags] or
+     "_pfelk_kea_dhcp6_parse_failure" in [tags] or
+     "_pfelk_nginx_parse_failure" in [tags] or
+     "_pfelk_openvpn_parse_failure" in [tags] or
+     "_pfelk_bind9_parse_failure" in [tags] or
+     "_pfelk_webportal_parse_failure" in [tags] or
+     "_pfelk_snort_parse_failure" in [tags] or
+     "_pfelk_suricata_parse_failure" in [tags] or
+     "_pfelk_suricata_json_failure" in [tags] or
+     "_pfelk_squid_parse_failure" in [tags] or
+     "_pfelk_squid_json_failure" in [tags] or
+     "_pfelk_unbound_parse_failure" in [tags] {
+    mutate {
+      replace => {
+        "[event][dataset]" => "pfelk.pipeline_error"
+        "[event][kind]" => "pipeline_error"
+        "[event][type]" => "error"
+      }
+    }
+  }
+
   # Every pfELK event should carry a dataset. Unknown/unparsed processes are kept
   # rather than discarded so new/changed log formats can be discovered.
   if ![event][module] {
@@ -49,9 +78,9 @@ output {
     # Native default. Docker should set PFELK_ES_HOSTS=https://es01:9200.
     hosts => [ "${PFELK_ES_HOSTS:https://localhost:9200}" ]
 
-    # Prefer a dedicated pfELK writer account. Do not use logstash_system for
+    # Use a dedicated pfELK writer account. Do not use logstash_system for
     # pipeline writes; that built-in account is for Logstash monitoring.
-    user => "${PFELK_ES_USER:elastic}"
+    user => "${PFELK_ES_USER:pfelk_writer}"
     password => "${PFELK_ES_PASSWORD}"
 
     ssl_enabled => true
