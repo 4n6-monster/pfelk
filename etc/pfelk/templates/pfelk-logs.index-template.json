@@ -1,0 +1,23 @@
+{
+  "index_patterns": [
+    "logs-pfelk.*-*"
+  ],
+  "data_stream": {},
+  "priority": 501,
+  "version": 261001,
+  "composed_of": [
+    "pfelk-mappings"
+  ],
+  "template": {
+    "settings": {
+      "number_of_replicas": "__PFELK_REPLICAS__"
+    },
+    "lifecycle": {
+      "data_retention": "__PFELK_RETENTION__"
+    }
+  },
+  "_meta": {
+    "description": "pfELK data streams with configurable retention",
+    "version": "26.10.1"
+  }
+}
