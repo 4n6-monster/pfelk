@@ -2,7 +2,7 @@
 ################################################################################
 # Version: 26.10                                                               #
 # Required: True                                                               #
-# Description: Parses application events and applies ECS-oriented enrichment.   #
+# Description: Parses application events and applies ECS-oriented enrichment.  #
 ################################################################################
 
 filter {
