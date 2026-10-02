@@ -1,53 +1,29 @@
 # 37-enhanced_user_agent.pfelk
 ################################################################################
-# Version: 23.08                                                               #
+# Version: 26.10                                                               #
 # Required: False - Optional                                                   #
-# Description: enriches user_agent.original field for suricata/squid logs      #
-#                                                                              #
+# Description: ECS user-agent parsing/enrichment.                              #
 ################################################################################
-#
+
 filter {
   if [user_agent][original] {
-    ruby {
-      code => "
-        http_useragent = event.get('[user_agent][original]')
-        event.set('[user_agent][meta][total_length]', http_useragent.length)
-      "
-      tag_on_exception => "_rubyexception-all-http_user_agent_parsing"
-    }
     useragent {
+      id => "pfelk-user-agent"
       source => "[user_agent][original]"
-      target => "user_agent"
-      # Add field if successful for checking later
-      add_field => { "[@metadata][ua_parse]" => "true" }
+      target => "[user_agent]"
+      ecs_compatibility => "v8"
+      tag_on_failure => [ "_pfelk_useragent_parse_failure" ]
     }
-    # UA to new ECS
-    if [@metadata][ua_parse] == "true" {
-      if [user_agent][os_major] and [user_agent][os_minor] and [user_agent][patch] {
-        mutate {
-          convert => {
-            "[user_agent][os_major]" => "string"
-            "[user_agent][os_minor]" => "string"
-            "[user_agent][patch]" => "string"
-          }
-          remove_field => ["[user_agent][os][version]"]
-        }
-#        mutate {
-#          add_field => {
-#            "[user_agent][os][version]" => "%{[user_agent][os_major]}.%{[user_agent][os_minor]}-%{[user_agent][patch]}"
-#          }
-#        }
-      }
-      mutate {
-        rename => {
-          "[user_agent][os]" => "[user_agent][os][full]"
-          "[user_agent][os_name]" => "[user_agent][os][name]"
-          "[user_agent][device]" => "[user_agent][device][name]"
-        }
-        remove_field => ["[user_agent][os][major]"]
-        remove_field => ["[user_agent][os][minor]"]
-        remove_field => ["[user_agent][patch]"]
-      }
+
+    # Keep custom analytics under the pfelk namespace rather than inventing
+    # fields beneath ECS user_agent.*
+    ruby {
+      id => "pfelk-user-agent-length"
+      code => '
+        value = event.get("[user_agent][original]")
+        event.set("[pfelk][user_agent][length]", value.length) if value
+      '
+      tag_on_exception => "_pfelk_useragent_length_failure"
     }
   }
 }
