@@ -1,6 +1,6 @@
 # pfelk.grok
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Core pfSense/OPNsense and application Grok patterns for pfELK.                #
 ################################################################################
 
@@ -22,7 +22,7 @@ CAPTIVE1 %{WORD:[observer][ingress][interface][alias]}:\s%{DATA:[observer][ingre
 CAPTIVE2 %{WORD:[observer][ingress][interface][alias]}:\s%{DATA:[observer][ingress][zone]}\s\-\s%{GREEDYDATA:[event][action]}\:\s%{GREEDYDATA:[client][user][name]},\s%{MAC:[client][mac]},\s%{IP:[client][ip]}(,\s%{GREEDYDATA:[event][reason]})?
 
 # DHCPv4 (Optional) - DEPRECATED
-DHCPD DHCP(%{DHCPD_DISCOVER}|%{DHCPD_DUPLICATE}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM}|%{DHCPD_LEASE})|%{DHCPD_REUSE}|%{DHCPDv6}|(%{GREEDYDATA:[DHCPD][message]})?
+DHCPD (DHCP(%{DHCPD_DISCOVER}|%{DHCPD_DUPLICATE}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM}|%{DHCPD_LEASE})|%{DHCPD_REUSE}|%{DHCPDv6})
 DHCPD_DISCOVER (?<[dhcp][operation]>DISCOVER) from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
 DHCPD_DECLINE (?<[dhcp][operation]>DECLINE) of %{IP:[dhcpv4][client][ip]} from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
 DHCPD_DUPLICATE uid %{WORD:[dhcp][operation]} %{IP:[dhcpv4][client][ip]} for client %{MAC:[dhcpv4][client][mac]} is %{WORD:[dhcp][error][code]} on %{GREEDYDATA:[dhcpv4][client][address]}
@@ -51,7 +51,8 @@ KEADHCP_REBOOT (?<[kea][dhcp][operation]>REBOOT)\s\[hwtype=%{INT:[kea][dhcp][har
 KEADHCP_ADVERT (?<[kea][dhcp][operation]>ADVERT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
 KEADHCP_ALLOC (?<[kea][dhcp][operation]>ALLOC)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]}).*%{NUMBER:[kea][dhcp][lease][duration]}
 KEADHCP_EXECUTE (?<[kea][dhcp][operation]>EXECUTE)%{GREEDYDATA:[kea][message]}
-KEADHCP6 %{GREEDYDATA:filter_message}
+# Kea DHCPv6: intentionally no catch-all pattern; unsupported records are
+# explicitly tagged/routed by 05-apps.pfelk until fixture-backed patterns exist.
 
 # NGINX
 NGINX %{NGINX_META}%{NGINX_LOG}(%{NGINX_EXT})?

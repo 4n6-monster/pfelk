@@ -1,123 +1,26 @@
-# pfelk.grok
+# openvpn.grok
 ################################################################################
-# Version: 26.10                                                               #
-# Core pfSense/OPNsense and application Grok patterns for pfELK.                #
+# Version: 26.10.1                                                               #
+# OPNsense/pfSense OpenVPN log Grok patterns for pfELK                         #
 ################################################################################
 
-# PFELK syslog header
-PFELK (%{RFC5424}|%{OPNSENSE}|%{PFSENSE})
+# OPENVPN
+OPENVPN (%{OVPN_SER}|%{OVPN_ST}|%{OVPN_CLIENT}|%{OVPN_MULTI}|%{OVPN_ISQ}|%{OVPN_PH}|%{OVPN_USER})
 
-# pfSense / OPNsense RFC3164
-PFSENSE %{SYSLOGTIMESTAMP:[pfelk][timestamp]}\s(%{SYSLOGHOST:[log][syslog][hostname]}\s)?%{PROG:[log][syslog][appname]}(\[%{POSINT:[log][syslog][procid]:int}\])?\:\s%{GREEDYDATA:filter_message}
-OPNSENSE %{SYSLOGTIMESTAMP:[pfelk][timestamp]}\s%{SYSLOGHOST:[log][syslog][hostname]}\s%{PROG:[log][syslog][appname]}\[%{POSINT:[log][syslog][procid]:int}\]\:\s%{GREEDYDATA:filter_message}
+OVPN_SER openvpn server '%{DATA:[openvpn][server][name]}' user '%{USER:[openvpn][client][user][name]}' address '%{IP:[openvpn][client][ip]}'(?::%{INT:[openvpn][client][port]:int})? - %{GREEDYDATA:[openvpn][event][original]}
+OVPN_ST user '%{USER:[openvpn][client][user][name]}' %{GREEDYDATA:[openvpn][event][original]}
 
-# OPNsense / pfSense RFC5424
-RFC5424 (%{INT:[log][syslog][version]:int}\s*)%{TIMESTAMP_ISO8601:[pfelk][timestamp]}\s%{SYSLOGHOST:[log][syslog][hostname]}\s%{PROG:[log][syslog][appname]}(\s%{POSINT:[log][syslog][procid]:int})?(\s\-\s\-\s?(\-\s)?)?(\s\-\s\[meta\ssequenceId\=(\\)?\"%{NUMBER:[event][sequence]}(\\)?\"\])?\s%{GREEDYDATA:filter_message}
+OVPN_CLIENT (%{OVPN_C1}|%{OVPN_C2})
+OVPN_C1 %{USER:[openvpn][client][user][name]}/%{IP:[openvpn][client][ip]}:%{INT:[openvpn][client][port]:int} MULTI_sva: pool returned IPv4=(%{IP:[openvpn][source][ip]}|\(Not enabled\)), IPv6=(\(Not enabled\)|%{IP:[openvpn][source][ipv6]})
+OVPN_C2 %{USER:[openvpn][client][user][name]}/%{IP:[openvpn][client][ip]}:%{INT:[openvpn][client][port]:int} MULTI: primary virtual IP for %{USER:[openvpn][client][user][name]}/%{IP:[openvpn][client][ip]}:%{INT:[openvpn][client][port]:int}: %{IP:[openvpn][source][ip]}
+OVPN_MULTI %{USER:[openvpn][client][user][name]}/%{IP:[openvpn][client][ip]}:%{INT:[openvpn][client][port]:int} MULTI: Learn: %{IP:[openvpn][source][ip]} -> %{USER:[openvpn][client][user][name]}/%{IP:[openvpn][client][ip]}:%{INT:[openvpn][client][port]:int}
 
-# CAPTIVE PORTAL (Optional)
-CAPTIVEPORTAL (%{CP_PFSENSE}|%{CP_OPNSENSE})
-CP_OPNSENSE %{WORD:[event][action]}\s%{GREEDYDATA:[client][user][name]}\s\(%{IP:[client][ip]}\)\s%{WORD:[observer][ingress][interface][alias]}\s%{INT:[observer][ingress][zone]:int}
-CP_PFSENSE (%{CAPTIVE1}|%{CAPTIVE2})
-CAPTIVE1 %{WORD:[observer][ingress][interface][alias]}:\s%{DATA:[observer][ingress][zone]}\s\-\s%{WORD:[event][action]}\:\s%{GREEDYDATA:[client][user][name]},\s%{MAC:[client][mac]},\s%{IP:[client][ip]}(,\s%{GREEDYDATA:[event][reason]})?
-CAPTIVE2 %{WORD:[observer][ingress][interface][alias]}:\s%{DATA:[observer][ingress][zone]}\s\-\s%{GREEDYDATA:[event][action]}\:\s%{GREEDYDATA:[client][user][name]},\s%{MAC:[client][mac]},\s%{IP:[client][ip]}(,\s%{GREEDYDATA:[event][reason]})?
+### OPENVPN Enhanced Log Parser ###
+OVPN_ISQ Initialization Sequence Completed
+OVPN_PH %{IP:[openvpn][client][ip]}:%{INT:[openvpn][client][port]:int}\s%{OVPN_PINFOI}
+OVPN_PINFOI peer info: (%{OVPN_PINFO1}|%{OVPN_PINFO2}|%{OVPN_PINFO3})
+OVPN_PINFO1 ((IV_COMP_STUB(v2)?=%{INT:[openvpn][client][iv][comp_stub]:int})|(IV_BS64DL=%{INT:[openvpn][client][iv][bs64dl]:int})|(IV_LZO=%{INT:[openvpn][client][iv][lzo]:int})|(IV_LZ4v2=%{INT:[openvpn][client][iv][lz4v2]:int})|(IV_LZ4=%{INT:[openvpn][client][iv][lz4]:int})|(IV_NCP=%{INT:[openvpn][client][iv][ncp]:int})|(IV_PLAT=%{WORD:[openvpn][client][platform]})|(IV_PROTO=%{INT:[openvpn][client][iv][proto]:int})|(IV_TCPNL=%{INT:[openvpn][client][iv][tcpnl]:int})|(IV_PLAT_VER=%{GREEDYDATA:[openvpn][client][platform_version]}))
+OVPN_PINFO2 ((IV_VER=%{GREEDYDATA:[openvpn][client][version]})|(IV_GUI_VER=%{GREEDYDATA:[openvpn][client][gui_version]}))
+OVPN_PINFO3 ((IV_SSO=%{GREEDYDATA:[openvpn][client][sso]})|(IV_CIPHERS=%{GREEDYDATA:[openvpn][client][ciphers]}))
 
-# DHCPv4 (Optional) - DEPRECATED
-DHCPD DHCP(%{DHCPD_DISCOVER}|%{DHCPD_DUPLICATE}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM}|%{DHCPD_LEASE})|%{DHCPD_REUSE}|%{DHCPDv6}|(%{GREEDYDATA:[DHCPD][message]})?
-DHCPD_DISCOVER (?<[dhcp][operation]>DISCOVER) from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
-DHCPD_DECLINE (?<[dhcp][operation]>DECLINE) of %{IP:[dhcpv4][client][ip]} from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
-DHCPD_DUPLICATE uid %{WORD:[dhcp][operation]} %{IP:[dhcpv4][client][ip]} for client %{MAC:[dhcpv4][client][mac]} is %{WORD:[dhcp][error][code]} on %{GREEDYDATA:[dhcpv4][client][address]}
-DHCPD_INFORM (?<[dhcp][operation]>INFORM) from %{IP:[dhcpv4][client][ip]}? %{DHCPD_VIA}
-DHCPD_LEASE (?<[dhcp][operation]>LEASE(QUERY|UNKNOWN|ACTIVE|UNASSIGNED)) (from|to) %{IP:[dhcpv4][client][ip]} for (IP %{IP:[dhcpv4][query][ip]}|client-id %{NOTSPACE:[dhcpv4][query][id]}|MAC address %{MAC:[dhcpv4][query][mac]})( \(%{NUMBER:[dhcpv4][query][associated]} associated IPs\))?
-DHCPD_OFFER_ACK (?<[dhcp][operation]>(OFFER|N?ACK)) on %{IP:[dhcpv4][client][ip]} to %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
-DHCPD_RELEASE (?<[dhcp][operation]>RELEASE) of %{IP:[dhcpv4][client][ip]} from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA} \((?<dhcpd_release>(not )?found)\)
-DHCPD_REQUEST (?<[dhcp][operation]>REQUEST) for %{IP:[dhcpv4][client][ip]}( \(%{DATA:[dhcpv4][server][ip]}\))? from %{MAC:[dhcpv4][client][mac]}( \(%{DATA:[dhcpv4][option][hostname]}\))? %{DHCPD_VIA}
-DHCPD_VIA via (%{IP:[dhcpv4][relay][ip]}|(?<[interface][name]>[^: ]+))
-DHCPD_REUSE (?<[dhcpv4][operation]>reuse_lease): lease age %{INT:[dhcpv4][lease][duration]:int}.* lease for %{IPV4:[dhcpv4][client][ip]}
-
-# DHCPv6 (Optional) - DEPRECATED
-DHCPDv6 (%{DHCPv6_REPLY}|%{DHCPv6_ACTION}|%{DHCPv6_REUSE})
-DHCPv6_REPLY (?<[dhcpv6][operation]>Advertise|Reply) NA: address %{IP:[dhcpv6][client][ip]} to client with duid %{GREEDYDATA:[dhcpv6][duid]}\siaid\s\=\s%{INT:[dhcpv6][iaid]:int} valid for %{INT:[dhcpv6][lease][duration]:int} seconds
-DHCPv6_ACTION (?<[dhcpv6][operation]>(Request|Picking|Sending Reply|Sending Advertise|Confirm|Solicit|Renew))(\s)?(message)?(\s)?(to|from)?(\s)?(pool address)? %{IP:[dhcpv6][client][ip]}(\s)?(port %{INT:[dhcpv6][client][port]:int})?(, transaction ID %{BASE16FLOAT:[dhcpv6][transaction][id]})?
-DHCPv6_REUSE (?<[dhcpv6][operation]>Reusing lease) for: %{IPV6:[dhcpv6][client][ip]}, age %{INT:[dhcpv6][lease][age][length]:int}.*preferred: %{INT:[dhcpv6][lease][age][preferred]:int}, valid %{INT:[dhcpv6][lease][age][valid]:int}
-
-# HAPROXY
-HA_PROXY (%{HAPROXY}|%{HAPROXY_TCP})
-HAPROXY %{IP:[client][ip]}:%{INT:[client][port]:int} \[%{HAPROXYDATE:[haproxy][timestamp]}\] %{NOTSPACE:[haproxy][frontend_name]} %{NOTSPACE:[haproxy][backend_name]}/%{NOTSPACE:[haproxy][server_name]} %{INT:[haproxy][time_request]:int}/%{INT:[haproxy][time_queue]:int}/%{INT:[haproxy][time_backend_connect]:int}/%{INT:[haproxy][time_backend_response]:int}/%{INT:[haproxy][time_total]:int} %{INT:[http][response][status_code]:int} %{INT:[haproxy][bytes_read]:int} %{DATA:[haproxy][http][request][captured_cookie]} %{DATA:[haproxy][http][response][captured_cookie]} %{NOTSPACE:[haproxy][termination_state]} %{INT:[haproxy][connections][active]:int}/%{INT:[haproxy][connections][frontend]:int}/%{INT:[haproxy][connections][backend]:int}/%{INT:[haproxy][connections][server]:int}/%{INT:[haproxy][connections][retries]:int} %{INT:[haproxy][server_queue]:int}/%{INT:[haproxy][backend_queue]:int} (\{%{HAPROXYCAPTUREDREQUESTHEADERS}\})?( )?(\{%{HAPROXYCAPTUREDRESPONSEHEADERS}\})?( )?"(<BADREQ>|(%{WORD:[http][request][method]} (%{URIPROTO:[haproxy][mode]}://)?(?:%{USER:[user][name]}(?::[^@]*)?@)?(?:%{URIHOST:[http][request][referrer]})?(?:%{URIPATHPARAM:[http][mode]})?( HTTP/%{NUMBER:[http][version]})?))?"?
-HAPROXY_TCP %{IP:[client][ip]}:%{INT:[client][port]:int} \[%{HAPROXYDATE:[haproxy][timestamp]}\] %{NOTSPACE:[haproxy][frontend_name]} %{NOTSPACE:[haproxy][backend_name]}/%{NOTSPACE:[haproxy][server_name]} %{INT:[haproxy][time_queue]:int}/%{INT:[haproxy][time_backend_connect]:int}/%{INT:[haproxy][time_total]:int} %{INT:[haproxy][bytes_read]:int} %{NOTSPACE:[haproxy][termination_state]} %{INT:[haproxy][connections][active]:int}/%{INT:[haproxy][connections][frontend]:int}/%{INT:[haproxy][connections][backend]:int}/%{INT:[haproxy][connections][server]:int}/%{INT:[haproxy][connections][retries]:int} %{INT:[haproxy][server_queue]:int}/%{INT:[haproxy][backend_queue]:int}
-
-# KEA-DHCP
-KEADHCP4 (%{KEADHCP_REBOOT}|%{KEADHCP_ADVERT}|%{KEADHCP_ALLOC}|%{KEADHCP_EXECUTE})
-KEADHCP_REBOOT (?<[kea][dhcp][operation]>REBOOT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}.*(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
-KEADHCP_ADVERT (?<[kea][dhcp][operation]>ADVERT)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]})
-KEADHCP_ALLOC (?<[kea][dhcp][operation]>ALLOC)\s\[hwtype=%{INT:[kea][dhcp][hardware_type]:int}\s%{MAC:[kea][dhcp][client][mac]}\],\scid=\[%{GREEDYDATA:[kea][dhcp][id]}\]\,\stid=%{BASE16NUM:[kea][dhcp][lease][id]}\:\slease\s(%{IPV4:[kea][dhcp][client][ip]}|%{IPV6:[kea][dhcp][client][ip]}).*%{NUMBER:[kea][dhcp][lease][duration]}
-KEADHCP_EXECUTE (?<[kea][dhcp][operation]>EXECUTE)%{GREEDYDATA:[kea][message]}
-KEADHCP6 %{GREEDYDATA:filter_message}
-
-# NGINX
-NGINX %{NGINX_META}%{NGINX_LOG}(%{NGINX_EXT})?
-NGINX_META %{IPORHOST:[client][ip]}(\s\-\s)(%{USERNAME:[nginx][access][user_name]}|\-)?\s\[%{HTTPDATE:timestamp}\]\s*\"
-NGINX_LOG %{WORD:[nginx][access][method]}\s*%{NOTSPACE:[nginx][access][url]}\s*HTTP/%{NUMBER:[nginx][access][http_version]}\"\s%{INT:[nginx][access][response_code]:int}\s%{INT:[nginx][access][body_sent][bytes]:int}\s"%{NOTSPACE:[nginx][access][referrer]}"\s"%{DATA:[nginx][access][agent]}"
-NGINX_EXT (\s\"\-\"\s*)\"%{IPORHOST:[nginx][access][forwarder]}\"(%{NGINX_EXT_SN}%{NGINX_EXT_RT}%{NGINX_EXT_UA}%{NGINX_EXT_US}%{NGINX_EXT_UT}%{NGINX_EXT_UL})?
-NGINX_EXT_SN \s*sn=(\"%{HOSTNAME:[nginx][ingress_controller][upstream][name]}\"|"")
-NGINX_EXT_RT \s*rt=(%{NUMBER:[nginx][ingress_controller][http][request][time]}|"")
-NGINX_EXT_UA \s*ua=(("%{IP:[nginx][ingress_controller][upstream][ip]}:%{INT:[nginx][ingress_controller][upstream][port]:int}")|("-")|("%{NOTSPACE:[nginx][ingress_controller][upstream][socket]}"))\s*
-NGINX_EXT_US \s*us=(\"%{INT:[nginx][ingress_controller][upstream][response][status_code]:int}\"|"-")
-NGINX_EXT_UT \s*ut=(\"%{NUMBER:[nginx][ingress_controller][upstream][response][time]}\"|"-")
-NGINX_EXT_UL \s*ul=(\"%{NUMBER:[nginx][ingress_controller][upstream][response][length]}\"|"-")
-
-# OPENVPN (reference openvpn.grok)
-
-# PF
-PF_CARP_DATA (%{WORD:[pf][carp][type]}),(%{INT:[pf][carp][ttl]}),(%{INT:[pf][carp][vhid]}),(%{INT:[pf][carp][version]}),(%{INT:[pf][carp][advbase]}),(%{INT:[pf][carp][advskew]})
-PF_APP (%{DATA:[pf][app][page]}):
-PF_APP_DATA (%{PF_APP_LOGOUT}|%{PF_APP_LOGIN}|%{PF_APP_ERROR}|%{PF_APP_GEN})
-PF_APP_LOGIN (%{DATA:[pf][app][action]}) for user \'(%{DATA:[pf][app][user]})\' from: (%{IP:[pf][remote][ip]})
-PF_APP_LOGOUT User (%{DATA:[pf][app][action]}) for user \'(%{DATA:[pf][app][user]})\' from: (%{IP:[pf][remote][ip]})
-PF_APP_ERROR webConfigurator (%{DATA:[pf][app][action]}) for user \'(%{DATA:[pf][app][user]})\' from (%{IP:[pf][remote][ip]})
-PF_APP_GEN (%{GREEDYDATA:[pf][app][action]})
-
-# SURICATA
-SURICATA (%{SURICATA_LOG}|%{SURICATA_NOTICE})
-SURICATA_LOG \[%{INT:[suricata][generator_id]:int}:%{INT:[rule][id]}:%{INT:[rule][version]}\]\s+%{GREEDYDATA:[rule][name]}\s+\[Classification:\s*%{DATA:[rule][category]}\]\s+\[Priority:\s*%{INT:[event][severity]:int}\]\s+\{%{WORD:[network][transport]}\}\s+%{IP:[source][ip]}:%{INT:[source][port]:int}\s+->\s+%{IP:[destination][ip]}:%{INT:[destination][port]:int}
-SURICATA_NOTICE \[%{NUMBER:[event][code]}\]\s\<%{WORD:[event][action]}\>\s\-\-\s%{GREEDYDATA:[package][description]}
-
-# SNORT
-SNORT \[%{INT:[snort][generator_id]:int}\:%{INT:[rule][id]}\:%{INT:[rule][version]}\]\s+%{GREEDYDATA:[rule][name]}\s+\[Classification\:\s*%{DATA:[rule][category]}\]\s+\[Priority\:\s*%{INT:[event][severity]:int}\]\s+\{%{DATA:[network][transport]}\}\s+%{IP:[source][ip]}(\:%{INT:[source][port]:int})?\s+\-\>\s+%{IP:[destination][ip]}(\:%{INT:[destination][port]:int})?
-
-# SQUID
-SQUID %{IPORHOST:[client][ip]} %{NOTSPACE:[labels][request_status]}/%{INT:[http][response][status_code]:int} %{INT:[http][response][bytes]:int} %{NOTSPACE:[http][request][method]} (%{URIPROTO:[url][scheme]}://)?(?<[url][domain]>\S+?)(:%{INT:[url][port]:int})?(/%{NOTSPACE:[url][path]})?\s+%{NOTSPACE:[http][request][referrer]}\s+%{NOTSPACE:[labels][hierarchy_status]}/%{NOTSPACE:[destination][address]}\s+%{NOTSPACE:[http][response][mime_type]}
-
-# UNBOUND
-# Modern OPNsense/Unbound: "[pid:thread] query:" and "[pid:thread] reply:"
-# Legacy pfELK: "pid:thread info: client domain. TYPE CLASS"
-UNBOUND (%{UNBOUND_MODERN_QUERY}|%{UNBOUND_MODERN_REPLY}|%{UNBOUND_LEGACY})
-UNBOUND_MODERN_QUERY \[%{INT:[process][pid]:int}:%{INT:[process][thread][id]:int}\]\s+(?<[dns][type]>query):\s+%{IP:[client][ip]}\s+%{DATA:[dns][question][name]}\.\s+%{WORD:[dns][question][type]}\s+%{WORD:[dns][question][class]}
-UNBOUND_MODERN_REPLY \[%{INT:[process][pid]:int}:%{INT:[process][thread][id]:int}\]\s+(?<[dns][type]>reply):\s+%{IP:[client][ip]}\s+%{DATA:[dns][question][name]}\.\s+%{WORD:[dns][question][type]}\s+%{WORD:[dns][question][class]}\s+%{WORD:[dns][response_code]}(?:\s+%{GREEDYDATA:[unbound][response_details]})?
-UNBOUND_LEGACY \[?%{INT:[process][pid]:int}:%{INT:[process][thread][id]:int}\]?\s+%{LOGLEVEL:[log][level]}:\s+%{IP:[client][ip]}\s+%{GREEDYDATA:[dns][question][name]}\.\s+%{WORD:[dns][question][type]}\s+%{WORD:[dns][question][class]}
-
-# [DEPRECATED] legacy filterlog Grok patterns retained for compatibility/testing
-PF_LOG_ENTRY %{PF_LOG_DATA}%{PF_IP_SPECIFIC_DATA}%{PF_IP_DATA}%{PF_PROTOCOL_DATA}?
-PF_LOG_DATA %{INT:[rule][ruleset]},%{INT:[rule][id]}?,,%{DATA:[rule][uuid]},%{DATA:[interface][name]},(?<[event][reason]>\b[\w\-]+\b),%{WORD:[event][action]},%{WORD:[network][direction]},
-PF_IP_SPECIFIC_DATA %{PF_IPv4_SPECIFIC_DATA}|%{PF_IPv6_SPECIFIC_DATA}
-PF_IPv4_SPECIFIC_DATA (?<[network][type]>(4)),%{BASE16NUM:[pf][ipv4][tos]},%{WORD:[pf][ipv4][ecn]}?,%{INT:[pf][ipv4][ttl]},%{INT:[pf][ipv4][packet][id]},%{INT:[pf][ipv4][offset]},%{WORD:[pf][ipv4][flags]},%{INT:[network][iana_number]},%{WORD:[network][transport]},
-PF_IP_DATA %{INT:[pf][packet][length]},%{IP:[source][ip]},%{IP:[destination][ip]},
-PF_PROTOCOL_DATA %{PF_TCP_DATA}|%{PF_UDP_DATA}|%{PF_ICMP_DATA}|%{PF_IGMP_DATA}|%{PF_IPv6_VAR}|%{PF_IPv6_ICMP}
-PF_IPv6_SPECIFIC_DATA (?<[network][type]>(6)),%{BASE16NUM:[pf][ipv6][class]},%{WORD:[pf][ipv6][flow_label]},%{WORD:[pf][ipv6][hop_limit]},%{DATA:[pf][protocol][type]},%{INT:[pf][protocol][id]},
-PF_IPv6_VAR %{WORD:type},%{WORD:option},%{WORD:Flags},%{WORD:Flags}
-PF_IPv6_ICMP
-
-# PF protocol details - legacy
-PF_TCP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]},(?<[pf][tcp][flags]>(\w*)?),(?<[pf][tcp][sequence_number]>(\d*)?):?\d*,(?<[pf][tcp][ack_number]>(\d*)?),(?<[pf][tcp][window]>(\d*)?),(?<[pf][tcp][urg]>(\w*)?),%{GREEDYDATA:[pf][tcp][options]}
-PF_UDP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]}$
-PF_IGMP_DATA datalength=%{INT:[pf][data_length]}
-PF_ICMP_DATA %{PF_ICMP_TYPE}%{PF_ICMP_RESPONSE}
-PF_ICMP_TYPE (?<icmp_type>(request|reply|unreachproto|unreachport|unreach|timeexceed|paramprob|redirect|maskreply|needfrag|tstamp|tstampreply)),
-PF_ICMP_RESPONSE %{PF_ICMP_ECHO_REQ_REPLY}|%{PF_ICMP_UNREACHPORT}|%{PF_ICMP_UNREACHPROTO}|%{PF_ICMP_UNREACHABLE}|%{PF_ICMP_NEED_FLAG}|%{PF_ICMP_TSTAMP}|%{PF_ICMP_TSTAMP_REPLY}
-PF_ICMP_ECHO_REQ_REPLY %{INT:[pf][icmp][echo][id]},%{INT:[pf][icmp][echo][sequence]}
-PF_ICMP_UNREACHPORT %{IP:[pf][icmp][unreachport][destination][ip]},%{WORD:[pf][icmp][unreachport][protocol]},%{INT:[pf][icmp][unreachport][port]}
-PF_ICMP_UNREACHPROTO %{IP:[pf][icmp][unreach][destination][ip]},%{WORD:[pf][icmp][unreach][network][transport]}
-PF_ICMP_UNREACHABLE %{GREEDYDATA:[pf][icmp][unreachable]}
-PF_ICMP_NEED_FLAG %{IP:[pf][icmp][need_flag][ip]},%{INT:[pf][icmp][need_flag][mtu]}
-PF_ICMP_TSTAMP %{INT:[pf][icmp][tstamp][id]},%{INT:[pf][icmp][tstamp][sequence]}
-PF_ICMP_TSTAMP_REPLY %{INT:[pf][icmp][tstamp][reply][id]},%{INT:[pf][icmp][tstamp][reply][sequence]},%{INT:[pf][icmp][tstamp][reply][otime]},%{INT:[pf][icmp][tstamp][reply][rtime]},%{INT:[pf][icmp][tstamp][reply][ttime]}
-PF_SPEC \+
+OVPN_USER Locate overwrite for '%{USERNAME:[openvpn][client][user][name]}' using server '%{DATA:[openvpn][server][name]}' \(vpnid: %{INT:[openvpn][server][id]:int}\)
