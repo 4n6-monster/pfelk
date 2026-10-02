@@ -1,0 +1,32 @@
+# 48-related.pfelk
+################################################################################
+# Version: 26.10.1                                                             #
+# Required: True                                                               #
+# Description: Populates ECS related.ip for cross-role investigative pivots.   #
+################################################################################
+
+filter {
+  if "pfelk" in [tags] {
+    ruby {
+      id => "pfelk-related-ip"
+      code => '
+        paths = [
+          "[source][ip]",
+          "[destination][ip]",
+          "[client][ip]",
+          "[server][ip]",
+          "[host][ip]",
+          "[observer][ip]"
+        ]
+
+        ips = paths.flat_map do |path|
+          value = event.get(path)
+          value.is_a?(Array) ? value : [value]
+        end.compact.map(&:to_s).reject(&:empty?).uniq
+
+        event.set("[related][ip]", ips) unless ips.empty?
+      '
+      tag_on_exception => "_pfelk_related_ip_enrichment_failure"
+    }
+  }
+}

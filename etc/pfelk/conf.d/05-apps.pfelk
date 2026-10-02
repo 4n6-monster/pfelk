@@ -1,8 +1,8 @@
 # 05-apps.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Required: True                                                               #
-# Description: Parses application events and applies ECS-oriented enrichment.  #
+# Description: Parses application events and applies ECS-oriented enrichment.   #
 ################################################################################
 
 filter {
@@ -25,14 +25,14 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "captiveportalmessage" => "%{CAPTIVEPORTAL}" }
-      tag_on_failure => [ "_pfelk_captiveportal_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_captiveportal_parse_failure" ]
     }
   }
 
   ### ISC dhcpd - deprecated upstream in favor of Kea ###########################
   if [log][syslog][appname] == "dhcpd" {
     mutate {
-      add_tag => [ "dhcp", "dhcpdv4" ]
+      add_tag => [ "dhcp" ]
       add_field => {
         "[event][module]" => "pfelk"
         "[event][dataset]" => "pfelk.dhcp"
@@ -42,7 +42,14 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{DHCPD}" }
-      tag_on_failure => [ "_pfelk_dhcp_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_dhcp_parse_failure" ]
+    }
+    if "_pfelk_dhcp_parse_failure" not in [tags] {
+      if [dhcpv6] {
+        mutate { add_tag => [ "dhcpv6" ] }
+      } else if [dhcpv4] {
+        mutate { add_tag => [ "dhcpv4" ] }
+      }
     }
   }
 
@@ -70,14 +77,27 @@ filter {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       # HA_PROXY includes both HTTP and TCP mode patterns.
       match => { "filter_message" => "%{HA_PROXY}" }
-      tag_on_failure => [ "_pfelk_haproxy_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_haproxy_parse_failure" ]
+    }
+    if [haproxy][timestamp] and "_pfelk_haproxy_parse_failure" not in [tags] {
+      date {
+        id => "pfelk-haproxy-timestamp"
+        match => [
+          "[haproxy][timestamp]",
+          "dd/MMM/yyyy:HH:mm:ss.SSS",
+          "dd/MMM/yyyy:HH:mm:ss"
+        ]
+        target => "@timestamp"
+        timezone => "${PFELK_TIMEZONE:UTC}"
+        tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_haproxy_date_parse_failure" ]
+      }
     }
   }
 
   ### Kea DHCPv4 ################################################################
   if [log][syslog][appname] == "kea-dhcp4" {
     mutate {
-      add_tag => [ "kea-dhcp", "dhcp4" ]
+      add_tag => [ "kea-dhcp", "dhcp4", "dhcpv4" ]
       add_field => {
         "[event][module]" => "pfelk"
         "[event][dataset]" => "pfelk.kea_dhcp4"
@@ -87,24 +107,26 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{KEADHCP4}" }
-      tag_on_failure => [ "_pfelk_kea_dhcp4_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_kea_dhcp4_parse_failure" ]
     }
   }
 
-  ### Kea DHCPv6 - parser remains intentionally conservative/in-progress ########
+  ### Kea DHCPv6 - explicitly unsupported until fixture-backed parser exists ##
   if [log][syslog][appname] == "kea-dhcp6" {
     mutate {
-      add_tag => [ "kea-dhcp", "dhcp6" ]
+      add_tag => [
+        "kea-dhcp",
+        "dhcp6",
+        "dhcpv6",
+        "pfelk_unparsed",
+        "pfelk_pipeline_error",
+        "_pfelk_kea_dhcp6_unparsed"
+      ]
       add_field => {
         "[event][module]" => "pfelk"
         "[event][dataset]" => "pfelk.kea_dhcp6"
       }
       replace => { "[log][syslog][appname]" => "kea-dhcp" }
-    }
-    grok {
-      patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => { "filter_message" => "%{KEADHCP6}" }
-      tag_on_failure => [ "_pfelk_kea_dhcp6_parse_failure" ]
     }
   }
 
@@ -121,7 +143,38 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{NGINX}" }
-      tag_on_failure => [ "_pfelk_nginx_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_nginx_parse_failure" ]
+    }
+
+    if "_pfelk_nginx_parse_failure" not in [tags] {
+      mutate {
+        add_field => {
+          "[event][kind]" => "event"
+          "[event][category]" => "web"
+          "[event][type]" => "access"
+          "[network][protocol]" => "http"
+        }
+        copy => {
+          "[nginx][access][method]" => "[http][request][method]"
+          "[nginx][access][response_code]" => "[http][response][status_code]"
+          "[nginx][access][body_sent][bytes]" => "[http][response][body][bytes]"
+          "[nginx][access][url]" => "[url][original]"
+          "[nginx][access][referrer]" => "[http][request][referrer]"
+          "[nginx][access][agent]" => "[user_agent][original]"
+        }
+      }
+    }
+
+    if [timestamp] and "_pfelk_nginx_parse_failure" not in [tags] {
+      date {
+        id => "pfelk-nginx-timestamp"
+        match => [ "timestamp", "dd/MMM/yyyy:HH:mm:ss Z" ]
+        target => "@timestamp"
+        tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_nginx_date_parse_failure" ]
+      }
+      if "_pfelk_nginx_date_parse_failure" not in [tags] {
+        mutate { remove_field => [ "timestamp" ] }
+      }
     }
   }
 
@@ -139,7 +192,7 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{OPENVPN}" }
-      tag_on_failure => [ "_pfelk_openvpn_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_openvpn_parse_failure" ]
     }
 
     # Normalize the remote OpenVPN peer into ECS client fields while retaining
@@ -176,7 +229,7 @@ filter {
     }
     grok {
       match => { "filter_message" => "%{BIND9}" }
-      tag_on_failure => [ "_pfelk_bind9_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_bind9_parse_failure" ]
     }
   }
 
@@ -203,7 +256,7 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{PF_APP} %{PF_APP_DATA}" }
-      tag_on_failure => [ "_pfelk_webportal_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_webportal_parse_failure" ]
     }
     if [pf][app][action] {
       mutate {
@@ -228,7 +281,7 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{SNORT}" }
-      tag_on_failure => [ "_pfelk_snort_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_snort_parse_failure" ]
     }
     if [network][transport] {
       mutate { lowercase => [ "[network][transport]" ] }
@@ -311,7 +364,7 @@ filter {
       grok {
         patterns_dir => [ "/etc/pfelk/patterns" ]
         match => { "filter_message" => "%{SURICATA}" }
-        tag_on_failure => [ "_pfelk_suricata_parse_failure" ]
+        tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_suricata_parse_failure" ]
       }
     }
 
@@ -353,7 +406,7 @@ filter {
       grok {
         patterns_dir => [ "/etc/pfelk/patterns" ]
         match => { "filter_message" => "%{SQUID}" }
-        tag_on_failure => [ "_pfelk_squid_parse_failure" ]
+        tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_squid_parse_failure" ]
       }
     }
 
@@ -398,7 +451,7 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => { "filter_message" => "%{UNBOUND}" }
-      tag_on_failure => [ "_pfelk_unbound_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_unbound_parse_failure" ]
     }
 
     # Modern Unbound emits "query:" and "reply:". ECS calls the completed

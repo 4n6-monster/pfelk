@@ -1,60 +1,37 @@
 # 50-outputs.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                             #
 # Required: True                                                               #
-# Description: Builds ECS data-stream routing fields and sends events to        #
+# Description: Builds ECS data-stream routing fields and sends events to       #
 #              Elasticsearch.                                                  #
 #                                                                              #
 # Required environment/keystore value: PFELK_ES_PASSWORD                       #
-# Optional: PFELK_ES_HOSTS, PFELK_ES_USER, PFELK_CA_PATH, PFELK_NAMESPACE      #
+# Optional: PFELK_ES_HOSTS, PFELK_ES_USER, PFELK_CA_PATH, PFELK_NAMESPACE     #
 ################################################################################
 
 filter {
-  # Route known parser failures into a dedicated troubleshooting data stream.
-  # The original event is preserved by 01-inputs.pfelk.
-  if "_pfelk_syslog_priority_failure" in [tags] or
-     "_pfelk_header_parse_failure" in [tags] or
-     "_pfelk_date_parse_failure" in [tags] or
-     "_pfelk_captiveportal_parse_failure" in [tags] or
-     "_pfelk_dhcp_parse_failure" in [tags] or
-     "_pfelk_haproxy_parse_failure" in [tags] or
-     "_pfelk_kea_dhcp4_parse_failure" in [tags] or
-     "_pfelk_kea_dhcp6_parse_failure" in [tags] or
-     "_pfelk_nginx_parse_failure" in [tags] or
-     "_pfelk_openvpn_parse_failure" in [tags] or
-     "_pfelk_bind9_parse_failure" in [tags] or
-     "_pfelk_webportal_parse_failure" in [tags] or
-     "_pfelk_snort_parse_failure" in [tags] or
-     "_pfelk_suricata_parse_failure" in [tags] or
-     "_pfelk_suricata_json_failure" in [tags] or
-     "_pfelk_squid_parse_failure" in [tags] or
-     "_pfelk_squid_json_failure" in [tags] or
-     "_pfelk_unbound_parse_failure" in [tags] {
+  # Every parser that cannot fully normalize an event adds this generic tag.
+  # Specific _pfelk_* tags remain on the event for root-cause analysis.
+  if "pfelk_pipeline_error" in [tags] {
     mutate {
       replace => {
         "[event][dataset]" => "pfelk.pipeline_error"
         "[event][kind]" => "pipeline_error"
-        "[event][type]" => "error"
       }
     }
   }
 
   # Every pfELK event should carry a dataset. Unknown/unparsed processes are kept
-  # rather than discarded so new/changed log formats can be discovered.
+  # rather than silently discarded so new/changed upstream formats are visible.
   if ![event][module] {
-    mutate {
-      add_field => { "[event][module]" => "pfelk" }
-    }
+    mutate { add_field => { "[event][module]" => "pfelk" } }
   }
 
   if ![event][dataset] {
-    mutate {
-      add_field => { "[event][dataset]" => "pfelk.unknown" }
-    }
+    mutate { add_field => { "[event][dataset]" => "pfelk.unknown" } }
   }
 
   # ECS data streams are <type>-<dataset>-<namespace>.
-  # Application identity belongs in dataset; namespace is deployment grouping.
   mutate {
     add_field => {
       "[data_stream][type]" => "logs"
@@ -67,30 +44,31 @@ filter {
 }
 
 output {
-  elasticsearch {
-    id => "pfelk-elasticsearch"
+  # CI fixture tests add this metadata field and receive JSON on stdout without
+  # attempting to contact Elasticsearch.
+  if [@metadata][pfelk_test] {
+    stdout { codec => json_lines }
+  } else {
+    elasticsearch {
+      id => "pfelk-elasticsearch"
 
-    # data_stream_auto_routing derives the target from data_stream.* fields.
-    data_stream => "true"
-    data_stream_auto_routing => true
-    data_stream_sync_fields => true
+      data_stream => "true"
+      data_stream_auto_routing => true
+      data_stream_sync_fields => true
 
-    # Native default. Docker should set PFELK_ES_HOSTS=https://es01:9200.
-    hosts => [ "${PFELK_ES_HOSTS:https://localhost:9200}" ]
+      # Templates/lifecycle are installed by the native installer or Docker
+      # setup service. The runtime writer therefore needs only ingest rights.
+      manage_template => false
 
-    # Use a dedicated pfELK writer account. Do not use logstash_system for
-    # pipeline writes; that built-in account is for Logstash monitoring.
-    user => "${PFELK_ES_USER:pfelk_writer}"
-    password => "${PFELK_ES_PASSWORD}"
+      hosts => [ "${PFELK_ES_HOSTS:https://localhost:9200}" ]
+      user => "${PFELK_ES_USER:pfelk_writer}"
+      password => "${PFELK_ES_PASSWORD}"
 
-    ssl_enabled => true
-    # Native default. Docker should set:
-    # PFELK_CA_PATH=/usr/share/logstash/config/certs/ca/ca.crt
-    ssl_certificate_authorities => [
-      "${PFELK_CA_PATH:/etc/logstash/config/certs/http_ca.crt}"
-    ]
-
-    # Leave certificate verification enabled.
-    ssl_verification_mode => "full"
+      ssl_enabled => true
+      ssl_certificate_authorities => [
+        "${PFELK_CA_PATH:/etc/logstash/config/certs/http_ca.crt}"
+      ]
+      ssl_verification_mode => "full"
+    }
   }
 }

@@ -1,6 +1,6 @@
 # 35-rules-desc.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Required: False - Optional                                                   #
 # Description: Resolves firewall rule IDs through rule-names.csv.               #
 ################################################################################

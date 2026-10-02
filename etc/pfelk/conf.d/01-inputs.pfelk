@@ -1,6 +1,6 @@
 # 01-inputs.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Required: True                                                               #
 # Description: Receives pfELK syslog, preserves the original event, parses PRI, #
 #              and normalizes the device timestamp into @timestamp.             #
@@ -48,7 +48,7 @@ filter {
       match => {
         "message" => "^<%{POSINT:[log][syslog][priority]:int}>%{GREEDYDATA:[@metadata][pfelk_message]}$"
       }
-      tag_on_failure => [ "_pfelk_syslog_priority_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_syslog_priority_failure" ]
     }
 
     # Derive ECS syslog facility/severity fields from the captured PRI.
@@ -68,13 +68,22 @@ filter {
         match => {
           "[@metadata][pfelk_message]" => "%{PFELK}"
         }
-        tag_on_failure => [ "_pfelk_header_parse_failure" ]
+        tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_header_parse_failure" ]
       }
     }
 
     # Device time is the event time. PFELK_TIMEZONE is important for RFC3164
     # messages because they do not contain an explicit timezone.
     if [pfelk][timestamp] {
+      # RFC3164 timestamps have no timezone. Preserve the configured source
+      # timezone explicitly in ECS; ISO8601/RFC5424 timestamps already carry
+      # timezone/offset information.
+      if [pfelk][timestamp] =~ /^[A-Z][a-z]{2}[ ]/ {
+        mutate {
+          add_field => { "[event][timezone]" => "${PFELK_TIMEZONE:UTC}" }
+        }
+      }
+
       date {
         id => "pfelk-event-timestamp"
         match => [
@@ -85,7 +94,7 @@ filter {
         ]
         target => "@timestamp"
         timezone => "${PFELK_TIMEZONE:UTC}"
-        tag_on_failure => [ "_pfelk_date_parse_failure" ]
+        tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_date_parse_failure" ]
       }
     }
   }

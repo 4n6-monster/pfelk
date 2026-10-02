@@ -1,6 +1,6 @@
 # 30-geoip.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Required: False - Optional                                                   #
 # Description: GeoIP/ASN enrichment for ECS source, destination, and client IPs.#
 # For MaxMind local databases, remove "#MMR#" from the relevant database lines. #

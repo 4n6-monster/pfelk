@@ -1,6 +1,6 @@
 # 02-firewall.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Required: True                                                               #
 # Description: Parses and enriches pf filterlog events from pfSense/OPNsense.   #
 #                                                                              #
@@ -54,6 +54,26 @@ filter {
     }
     mutate {
       lowercase => [ "[event][action]", "[network][direction]" ]
+    }
+
+    # ECS firewall disposition. event.action keeps the native pf terminology;
+    # event.type provides normalized allow/deny categorization.
+    if [event][action] in [ "pass", "allow", "accept" ] {
+      mutate {
+        add_field => { "[event][type]" => "allowed" }
+      }
+    } else if [event][action] in [ "block", "deny", "reject", "drop" ] {
+      mutate {
+        add_field => { "[event][type]" => "denied" }
+      }
+    }
+
+    # The current filterlog parser supports IPv4/IPv6 packet records. Unknown or
+    # truncated records are retained and routed to pfelk.pipeline_error.
+    if ![pfelk_csv][8] or [network][type] not in [ "4", "6" ] {
+      mutate {
+        add_tag => [ "pfelk_pipeline_error", "_pfelk_firewall_parse_failure" ]
+      }
     }
 
     # IPv4
@@ -122,6 +142,98 @@ filter {
             "[pf][data_length]" => "integer"
           }
         }
+      } else if [network][transport] == "icmp" {
+        mutate {
+          add_field => { "[pf][icmp][type]" => "%{[pfelk_csv][20]}" }
+          lowercase => [ "[pf][icmp][type]" ]
+        }
+
+        if [pf][icmp][type] == "request" or [pf][icmp][type] == "reply" {
+          mutate {
+            add_field => {
+              "[pf][icmp][echo][id]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][echo][sequence]" => "%{[pfelk_csv][22]}"
+            }
+            convert => {
+              "[pf][icmp][echo][id]" => "integer"
+              "[pf][icmp][echo][sequence]" => "integer"
+            }
+          }
+        } else if [pf][icmp][type] == "unreachproto" {
+          mutate {
+            add_field => {
+              "[pf][icmp][unreachable][destination][ip]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][unreachable][protocol_id]" => "%{[pfelk_csv][22]}"
+            }
+            convert => { "[pf][icmp][unreachable][protocol_id]" => "integer" }
+          }
+        } else if [pf][icmp][type] == "unreachport" {
+          mutate {
+            add_field => {
+              "[pf][icmp][unreachable][destination][ip]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][unreachable][protocol]" => "%{[pfelk_csv][22]}"
+              "[pf][icmp][unreachable][port]" => "%{[pfelk_csv][23]}"
+            }
+            lowercase => [ "[pf][icmp][unreachable][protocol]" ]
+            convert => { "[pf][icmp][unreachable][port]" => "integer" }
+          }
+        } else if [pf][icmp][type] == "needfrag" {
+          mutate {
+            add_field => {
+              "[pf][icmp][fragmentation][destination][ip]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][fragmentation][mtu]" => "%{[pfelk_csv][22]}"
+            }
+            convert => { "[pf][icmp][fragmentation][mtu]" => "integer" }
+          }
+        } else if [pf][icmp][type] == "tstamp" {
+          mutate {
+            add_field => {
+              "[pf][icmp][timestamp][id]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][timestamp][sequence]" => "%{[pfelk_csv][22]}"
+            }
+            convert => {
+              "[pf][icmp][timestamp][id]" => "integer"
+              "[pf][icmp][timestamp][sequence]" => "integer"
+            }
+          }
+        } else if [pf][icmp][type] == "tstampreply" {
+          mutate {
+            add_field => {
+              "[pf][icmp][timestamp][id]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][timestamp][sequence]" => "%{[pfelk_csv][22]}"
+              "[pf][icmp][timestamp][originate]" => "%{[pfelk_csv][23]}"
+              "[pf][icmp][timestamp][receive]" => "%{[pfelk_csv][24]}"
+              "[pf][icmp][timestamp][transmit]" => "%{[pfelk_csv][25]}"
+            }
+            convert => {
+              "[pf][icmp][timestamp][id]" => "integer"
+              "[pf][icmp][timestamp][sequence]" => "integer"
+              "[pf][icmp][timestamp][originate]" => "integer"
+              "[pf][icmp][timestamp][receive]" => "integer"
+              "[pf][icmp][timestamp][transmit]" => "integer"
+            }
+          }
+        } else if [pfelk_csv][21] {
+          mutate { add_field => { "[pf][icmp][description]" => "%{[pfelk_csv][21]}" } }
+        }
+      } else if [network][transport] == "carp" or [network][iana_number] == "112" {
+        mutate {
+          add_field => {
+            "[pf][carp][type]" => "%{[pfelk_csv][20]}"
+            "[pf][carp][ttl]" => "%{[pfelk_csv][21]}"
+            "[pf][carp][vhid]" => "%{[pfelk_csv][22]}"
+            "[pf][carp][version]" => "%{[pfelk_csv][23]}"
+            "[pf][carp][advbase]" => "%{[pfelk_csv][24]}"
+            "[pf][carp][advskew]" => "%{[pfelk_csv][25]}"
+          }
+          convert => {
+            "[pf][carp][ttl]" => "integer"
+            "[pf][carp][vhid]" => "integer"
+            "[pf][carp][version]" => "integer"
+            "[pf][carp][advbase]" => "integer"
+            "[pf][carp][advskew]" => "integer"
+          }
+        }
       }
     }
 
@@ -186,6 +298,98 @@ filter {
             "[pf][data_length]" => "integer"
           }
         }
+      } else if [network][transport] in [ "icmp", "icmp6", "icmpv6", "ipv6-icmp" ] {
+        mutate {
+          add_field => { "[pf][icmp][type]" => "%{[pfelk_csv][17]}" }
+          lowercase => [ "[pf][icmp][type]" ]
+        }
+
+        if [pf][icmp][type] == "request" or [pf][icmp][type] == "reply" {
+          mutate {
+            add_field => {
+              "[pf][icmp][echo][id]" => "%{[pfelk_csv][18]}"
+              "[pf][icmp][echo][sequence]" => "%{[pfelk_csv][19]}"
+            }
+            convert => {
+              "[pf][icmp][echo][id]" => "integer"
+              "[pf][icmp][echo][sequence]" => "integer"
+            }
+          }
+        } else if [pf][icmp][type] == "unreachproto" {
+          mutate {
+            add_field => {
+              "[pf][icmp][unreachable][destination][ip]" => "%{[pfelk_csv][18]}"
+              "[pf][icmp][unreachable][protocol_id]" => "%{[pfelk_csv][19]}"
+            }
+            convert => { "[pf][icmp][unreachable][protocol_id]" => "integer" }
+          }
+        } else if [pf][icmp][type] == "unreachport" {
+          mutate {
+            add_field => {
+              "[pf][icmp][unreachable][destination][ip]" => "%{[pfelk_csv][18]}"
+              "[pf][icmp][unreachable][protocol]" => "%{[pfelk_csv][19]}"
+              "[pf][icmp][unreachable][port]" => "%{[pfelk_csv][20]}"
+            }
+            lowercase => [ "[pf][icmp][unreachable][protocol]" ]
+            convert => { "[pf][icmp][unreachable][port]" => "integer" }
+          }
+        } else if [pf][icmp][type] == "needfrag" {
+          mutate {
+            add_field => {
+              "[pf][icmp][fragmentation][destination][ip]" => "%{[pfelk_csv][18]}"
+              "[pf][icmp][fragmentation][mtu]" => "%{[pfelk_csv][19]}"
+            }
+            convert => { "[pf][icmp][fragmentation][mtu]" => "integer" }
+          }
+        } else if [pf][icmp][type] == "tstamp" {
+          mutate {
+            add_field => {
+              "[pf][icmp][timestamp][id]" => "%{[pfelk_csv][18]}"
+              "[pf][icmp][timestamp][sequence]" => "%{[pfelk_csv][19]}"
+            }
+            convert => {
+              "[pf][icmp][timestamp][id]" => "integer"
+              "[pf][icmp][timestamp][sequence]" => "integer"
+            }
+          }
+        } else if [pf][icmp][type] == "tstampreply" {
+          mutate {
+            add_field => {
+              "[pf][icmp][timestamp][id]" => "%{[pfelk_csv][18]}"
+              "[pf][icmp][timestamp][sequence]" => "%{[pfelk_csv][19]}"
+              "[pf][icmp][timestamp][originate]" => "%{[pfelk_csv][20]}"
+              "[pf][icmp][timestamp][receive]" => "%{[pfelk_csv][21]}"
+              "[pf][icmp][timestamp][transmit]" => "%{[pfelk_csv][22]}"
+            }
+            convert => {
+              "[pf][icmp][timestamp][id]" => "integer"
+              "[pf][icmp][timestamp][sequence]" => "integer"
+              "[pf][icmp][timestamp][originate]" => "integer"
+              "[pf][icmp][timestamp][receive]" => "integer"
+              "[pf][icmp][timestamp][transmit]" => "integer"
+            }
+          }
+        } else if [pfelk_csv][18] {
+          mutate { add_field => { "[pf][icmp][description]" => "%{[pfelk_csv][18]}" } }
+        }
+      } else if [network][transport] == "carp" or [network][iana_number] == "112" {
+        mutate {
+          add_field => {
+            "[pf][carp][type]" => "%{[pfelk_csv][17]}"
+            "[pf][carp][ttl]" => "%{[pfelk_csv][18]}"
+            "[pf][carp][vhid]" => "%{[pfelk_csv][19]}"
+            "[pf][carp][version]" => "%{[pfelk_csv][20]}"
+            "[pf][carp][advbase]" => "%{[pfelk_csv][21]}"
+            "[pf][carp][advskew]" => "%{[pfelk_csv][22]}"
+          }
+          convert => {
+            "[pf][carp][ttl]" => "integer"
+            "[pf][carp][vhid]" => "integer"
+            "[pf][carp][version]" => "integer"
+            "[pf][carp][advbase]" => "integer"
+            "[pf][carp][advskew]" => "integer"
+          }
+        }
       }
     }
 
@@ -234,6 +438,12 @@ filter {
           "[network][bytes]" => "integer"
           "[network][packets]" => "integer"
         }
+      }
+    }
+
+    if ![source][ip] or ![destination][ip] {
+      mutate {
+        add_tag => [ "pfelk_pipeline_error", "_pfelk_firewall_parse_failure" ]
       }
     }
   }

@@ -1,6 +1,6 @@
 # 49-cleanup.pfelk
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                               #
 # Required: False - Recommended                                                #
 # Description: Removes parser working fields and normalizes multi-value fields. #
 ################################################################################
@@ -36,7 +36,7 @@ filter {
       mapping => {
         "[pf][tcp][sequence_number]" => "%{[pf][tcp][sequence_number_start]}:%{[pf][tcp][sequence_number_range_end]}"
       }
-      tag_on_failure => [ "_pfelk_tcp_sequence_parse_failure" ]
+      tag_on_failure => [ "pfelk_pipeline_error", "_pfelk_tcp_sequence_parse_failure" ]
     }
 
     if [pf][tcp][sequence_number_start] {
