@@ -1,89 +1,71 @@
 # 45-enhanced_private.pfelk
 ################################################################################
-# Version: 24.11b                                                              #
+# Version: 26.10                                                               #
 # Required: False - Optional                                                   #
-# Description: Adds customized kea.dhcp.client.subdomain via dictionary lookup #
-# with domain and adds cusotmiazed GeoIP data for local IP address             #
+# Description: Local/private client hostname enrichment.                       #
+#                                                                              #
+# No fabricated GeoIP location is added. Add organization/location metadata    #
+# only when it represents your actual environment.                             #
 ################################################################################
-#
+
 filter {
-  if "unbound" in [tags] or "squid" in [tags] {
-    if [client][ip] {
-      translate {
-        source => "[client][ip]"
-        target => "[client][subdomain]"
-        ################################################################################
-        ###             Edit referenced dictionary for local IP/Hostnames            ### 
-        ################################################################################
-        dictionary_path => "/etc/pfelk/databases/private-hostnames.csv"
-        refresh_interval => 600
-        refresh_behaviour => replace
-        fallback => "%{[client][ip]}"
-      }
-      cidr {
-        address => [ "%{[client][ip]}" ]
-        network => [ "0.0.0.0/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/10", "224.0.0.0/4", "ff00::/8", "255.255.255.255/32", "::" ]
-        add_tag => "Private_Client_IP"
-      }     
+  # Normalize application-specific local-client addresses into ECS client.ip.
+  if "kea-dhcp" in [tags] and [kea][dhcp][client][ip] and ![client][ip] {
+    mutate {
+      copy => { "[kea][dhcp][client][ip]" => "[client][ip]" }
     }
   }
-    if "kea-dhcp" in [tags] {
-      if [kea][dhcp][client][ip] {
-        translate {
-          source => "[kea][dhcp][client][ip]"
-          target => "[client][subdomain]"
-          ################################################################################
-          ###             Edit referenced dictionary for local IP/Hostnames            ### 
-          ################################################################################
-          dictionary_path => "/etc/pfelk/databases/private-hostnames.csv"
-          refresh_interval => 600
-          refresh_behaviour => replace
-          fallback => "%{[kea][dhcp][client][ip]}"
-        }
-        cidr {
-          address => [ "%{[kea][dhcp][client][ip]}" ]
-          network => [ "0.0.0.0/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/10", "224.0.0.0/4", "ff00::/8", "255.255.255.255/32", "::" ]
-          add_tag => "Private_Client_IP"
-        }     
-      }
+
+  if "dhcp" in [tags] and [dhcpv6][client][ip] and ![client][ip] {
+    mutate {
+      copy => { "[dhcpv6][client][ip]" => "[client][ip]" }
+    }
+  }
+
+  if [client][ip] {
+    cidr {
+      id => "pfelk-private-client"
+      address => [ "%{[client][ip]}" ]
+      network => [
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "192.168.0.0/16",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+        "::/128",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
+        "2001:db8::/32"
+      ]
+      add_tag => [ "IP_NonPublic_Client" ]
+    }
+  }
+
+  if "IP_NonPublic_Client" in [tags] and [client][ip] {
+    translate {
+      id => "pfelk-private-client-domain"
+      source => "[client][ip]"
+      target => "[client][domain]"
+      dictionary_path => "/etc/pfelk/databases/private-hostnames.csv"
+      refresh_interval => 600
+      refresh_behaviour => replace
     }
 
-    if "dhcp" in [tags] {
-      if [dhcpv6][client][ip] {
-        translate {
-          source => "[dhcpv6][client][ip]"
-          target => "[client][subdomain]"
-          ################################################################################
-          ###             Edit referenced dictionary for local IP/Hostnames            ### 
-          ################################################################################
-          dictionary_path => "/etc/pfelk/databases/private-hostnames.csv"
-          refresh_interval => 600
-          refresh_behaviour => replace
-          fallback => "%{[dhcpv6][client][ip]}"
-        }
-        cidr {
-          address => [ "%{[dhcpv6][client][ip]}" ]
-          network => [ "0.0.0.0/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/10", "224.0.0.0/4", "ff00::/8", "255.255.255.255/32", "::" ]
-          add_tag => "Private_Client_IP"
-        }     
-      }
-    }
-
-    if "Private_Client_IP" in [tags] {
+    if [client][domain] {
       mutate {
-        ################################################################################
-        ###                  Amend the values below as desired                       ###
-        ################################################################################
-        add_field => {   
-          "[client][as][organization][name]" => "pfelk"
-          "[client][geo][location]" => "32.309, -64.813" 
-          "[client][geo][city_name]" => "City" 
-          "[client][geo][country_name]" => "Country"
-          "[client][geo][region_name]" => "State"
-          "[client][geo][country_iso_code]" => "US"
-        }
-        ################################################################################
-        lowercase => [ "[client][subdomain]" ]
+        lowercase => [ "[client][domain]" ]
       }
     }
   }
+}
