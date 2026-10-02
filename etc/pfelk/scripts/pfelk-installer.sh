@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version    | 26.10.0
+# Version    | 26.10.1
 # Repository | https://github.com/4n6-monster/pfelk
 #
 # pfELK native installer for Debian/Ubuntu + Elastic Stack 9.x
@@ -23,18 +23,26 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-SCRIPT_VERSION="26.10.0"
+SCRIPT_VERSION="26.10.1"
 DEFAULT_STACK_VERSION="9.5.4"
 DEFAULT_REPO="4n6-monster/pfelk"
 DEFAULT_REF="main"
 DEFAULT_NAMESPACE="default"
 DEFAULT_TIMEZONE="UTC"
+DEFAULT_RETENTION="30d"
+DEFAULT_ERROR_RETENTION="14d"
+DEFAULT_REPLICAS="0"
+DEFAULT_DLQ_RETAIN="14d"
 
 STACK_VERSION="${PFELK_STACK_VERSION:-$DEFAULT_STACK_VERSION}"
 PFELK_REPO="${PFELK_REPO:-$DEFAULT_REPO}"
 PFELK_REF="${PFELK_REF:-$DEFAULT_REF}"
 PFELK_NAMESPACE="${PFELK_NAMESPACE:-$DEFAULT_NAMESPACE}"
 PFELK_TIMEZONE="${PFELK_TIMEZONE:-$DEFAULT_TIMEZONE}"
+PFELK_RETENTION="${PFELK_RETENTION:-$DEFAULT_RETENTION}"
+PFELK_ERROR_RETENTION="${PFELK_ERROR_RETENTION:-$DEFAULT_ERROR_RETENTION}"
+PFELK_REPLICAS="${PFELK_REPLICAS:-$DEFAULT_REPLICAS}"
+PFELK_DLQ_RETAIN="${PFELK_DLQ_RETAIN:-$DEFAULT_DLQ_RETAIN}"
 NON_INTERACTIVE="${PFELK_NON_INTERACTIVE:-false}"
 INSTALL_MAXMIND="${PFELK_INSTALL_MAXMIND:-false}"
 INSTALL_ENRICHMENTS="${PFELK_INSTALL_ENRICHMENTS:-false}"
@@ -66,6 +74,10 @@ Options:
   --ref REF                Git ref/tag/commit (default: ${DEFAULT_REF})
   --namespace NAME         data_stream.namespace (default: ${DEFAULT_NAMESPACE})
   --timezone TZ            Firewall timezone for RFC3164 logs (default: ${DEFAULT_TIMEZONE})
+  --retention AGE          Normal data-stream retention (default: ${DEFAULT_RETENTION})
+  --error-retention AGE    Pipeline-error retention (default: ${DEFAULT_ERROR_RETENTION})
+  --replicas N             Data-stream replica count (default: ${DEFAULT_REPLICAS})
+  --dlq-retain AGE         Logstash DLQ age limit (default: ${DEFAULT_DLQ_RETAIN})
   --maxmind                Configure local MaxMind GeoLite2 databases
   --enrichments            Install optional interface/rule/port/URL/UA/private enrichments
   --skip-kibana            Install Elasticsearch/Logstash only
@@ -74,7 +86,8 @@ Options:
 
 Environment equivalents:
   PFELK_STACK_VERSION, PFELK_REPO, PFELK_REF, PFELK_NAMESPACE,
-  PFELK_TIMEZONE, PFELK_INSTALL_MAXMIND, PFELK_INSTALL_ENRICHMENTS,
+  PFELK_TIMEZONE, PFELK_RETENTION, PFELK_ERROR_RETENTION, PFELK_REPLICAS,
+  PFELK_DLQ_RETAIN, PFELK_INSTALL_MAXMIND, PFELK_INSTALL_ENRICHMENTS,
   PFELK_SKIP_KIBANA, PFELK_NON_INTERACTIVE
 EOF
 }
@@ -102,6 +115,10 @@ while (($#)); do
     --ref) PFELK_REF="${2:?missing ref}"; shift 2 ;;
     --namespace) PFELK_NAMESPACE="${2:?missing namespace}"; shift 2 ;;
     --timezone) PFELK_TIMEZONE="${2:?missing timezone}"; shift 2 ;;
+    --retention) PFELK_RETENTION="${2:?missing retention}"; shift 2 ;;
+    --error-retention) PFELK_ERROR_RETENTION="${2:?missing error retention}"; shift 2 ;;
+    --replicas) PFELK_REPLICAS="${2:?missing replica count}"; shift 2 ;;
+    --dlq-retain) PFELK_DLQ_RETAIN="${2:?missing DLQ retention}"; shift 2 ;;
     --maxmind) INSTALL_MAXMIND=true; shift ;;
     --enrichments) INSTALL_ENRICHMENTS=true; shift ;;
     --skip-kibana) SKIP_KIBANA=true; shift ;;
@@ -113,6 +130,11 @@ done
 
 [[ "${EUID}" -eq 0 ]] || die "Run this installer as root (sudo)."
 command -v systemctl >/dev/null || die "systemd is required."
+
+[[ "${PFELK_RETENTION}" =~ ^[1-9][0-9]*[dhms]$ ]] || die "Invalid --retention value: ${PFELK_RETENTION}"
+[[ "${PFELK_ERROR_RETENTION}" =~ ^[1-9][0-9]*[dhms]$ ]] || die "Invalid --error-retention value: ${PFELK_ERROR_RETENTION}"
+[[ "${PFELK_DLQ_RETAIN}" =~ ^[1-9][0-9]*[dhms]$ ]] || die "Invalid --dlq-retain value: ${PFELK_DLQ_RETAIN}"
+[[ "${PFELK_REPLICAS}" =~ ^[0-9]+$ ]] || die "Invalid --replicas value: ${PFELK_REPLICAS}"
 
 mkdir -p "${LOG_DIR}" "${STATE_DIR}" "${SECRET_DIR}"
 chmod 0750 "${LOG_DIR}" "${STATE_DIR}" "${SECRET_DIR}"
@@ -224,8 +246,7 @@ package_spec() {
   if [[ -n "${candidate}" ]]; then
     printf '%s=%s' "${pkg}" "${candidate}"
   else
-    warn "${pkg} ${desired} was not found exactly in APT metadata; installing the current 9.x repository version."
-    printf '%s' "${pkg}"
+    die "${pkg} ${desired} was not found in the Elastic 9.x APT repository. Choose an available --stack-version explicitly."
   fi
 }
 
@@ -259,6 +280,7 @@ install_pfelk_files() {
     "${PFELK_HOME}/conf.d" \
     "${PFELK_HOME}/config" \
     "${PFELK_HOME}/patterns" \
+    "${PFELK_HOME}/templates" \
     "${PFELK_HOME}/scripts" \
     "${PFELK_HOME}/databases" \
     "${PFELK_HOME}/logs"
@@ -269,6 +291,7 @@ install_pfelk_files() {
     02-firewall.pfelk \
     05-apps.pfelk \
     30-geoip.pfelk \
+    48-related.pfelk \
     49-cleanup.pfelk \
     50-outputs.pfelk
   do
@@ -277,6 +300,9 @@ install_pfelk_files() {
 
   install_repo_file "etc/pfelk/patterns/pfelk.grok" "${PFELK_HOME}/patterns/pfelk.grok"
   install_repo_file "etc/pfelk/patterns/openvpn.grok" "${PFELK_HOME}/patterns/openvpn.grok"
+  install_repo_file "etc/pfelk/templates/pfelk-mappings.component-template.json" "${PFELK_HOME}/templates/pfelk-mappings.component-template.json"
+  install_repo_file "etc/pfelk/templates/pfelk-logs.index-template.json" "${PFELK_HOME}/templates/pfelk-logs.index-template.json"
+  install_repo_file "etc/pfelk/templates/pfelk-pipeline-error.index-template.json" "${PFELK_HOME}/templates/pfelk-pipeline-error.index-template.json"
   install_repo_file "etc/pfelk/config/pipelines.yml" "/etc/logstash/pipelines.yml"
   install_repo_file "etc/pfelk/config/logstash.yml" "/etc/logstash/logstash.yml"
   install_repo_file "etc/pfelk/scripts/error-data.sh" "${PFELK_HOME}/scripts/error-data.sh" 0755
@@ -284,7 +310,13 @@ install_pfelk_files() {
 
   if [[ "${INSTALL_ENRICHMENTS}" == "true" ]]; then
     log "Installing optional pfELK enrichment pipeline files and dictionaries..."
-    for f in       20-interfaces.pfelk       35-rules-desc.pfelk       36-ports-desc.pfelk       37-enhanced_user_agent.pfelk       38-enhanced_url.pfelk       45-enhanced_private.pfelk
+    for f in \
+      20-interfaces.pfelk \
+      35-rules-desc.pfelk \
+      36-ports-desc.pfelk \
+      37-enhanced_user_agent.pfelk \
+      38-enhanced_url.pfelk \
+      45-enhanced_private.pfelk
     do
       install_repo_file "etc/pfelk/conf.d/${f}" "${PFELK_HOME}/conf.d/${f}"
     done
@@ -296,7 +328,7 @@ install_pfelk_files() {
 
   chown -R root:logstash "${PFELK_HOME}"
   find "${PFELK_HOME}" -type d -exec chmod 0750 {} +
-  find "${PFELK_HOME}/conf.d" "${PFELK_HOME}/config" "${PFELK_HOME}/patterns" \
+  find "${PFELK_HOME}/conf.d" "${PFELK_HOME}/config" "${PFELK_HOME}/patterns" "${PFELK_HOME}/templates" \
     -type f -exec chmod 0640 {} +
   chmod 0750 "${PFELK_HOME}/scripts/"*.sh
 }
@@ -393,24 +425,19 @@ reset_elastic_password() {
 }
 
 detect_es_url() {
-  if [[ -f /etc/elasticsearch/certs/http_ca.crt ]] &&
-     curl -s --cacert /etc/elasticsearch/certs/http_ca.crt --max-time 3 \
-       https://127.0.0.1:9200 >/dev/null 2>&1; then
-    ES_URL="https://127.0.0.1:9200"
-    ES_CA_ARGS=(--cacert /etc/elasticsearch/certs/http_ca.crt)
-  elif curl -sk --max-time 3 https://127.0.0.1:9200 >/dev/null 2>&1; then
-    ES_URL="https://127.0.0.1:9200"
-    ES_CA_ARGS=(-k)
-  else
-    ES_URL="http://127.0.0.1:9200"
-    ES_CA_ARGS=()
-    warn "Elasticsearch HTTP TLS was not detected. Review your security configuration."
-  fi
+  [[ -f /etc/elasticsearch/certs/http_ca.crt ]] ||
+    die "Elasticsearch HTTP CA not found at /etc/elasticsearch/certs/http_ca.crt; refusing insecure fallback."
+
+  ES_URL="https://127.0.0.1:9200"
+  ES_CA_ARGS=(--cacert /etc/elasticsearch/certs/http_ca.crt)
+
+  curl -sS "${ES_CA_ARGS[@]}" --max-time 5 "${ES_URL}" >/dev/null ||
+    die "Elasticsearch HTTPS endpoint is not reachable with its generated CA."
 }
 
 es_api() {
   local method="$1" path="$2" data="${3:-}"
-  local args=(-sS -u "elastic:${ELASTIC_PASSWORD}" -X "${method}")
+  local args=(-fsS -u "elastic:${ELASTIC_PASSWORD}" -X "${method}")
   args+=("${ES_CA_ARGS[@]}")
   if [[ -n "${data}" ]]; then
     args+=(-H "Content-Type: application/json" -d "${data}")
@@ -423,12 +450,12 @@ create_writer_identity() {
     PFELK_WRITER_PASSWORD="$(openssl rand -base64 36 | tr -d '\n' | tr '/+' '_-')"
   fi
 
-  log "Creating/updating dedicated pfelk_writer role and user..."
+  log "Creating/updating least-privilege pfelk_writer role and user..."
   es_api PUT "/_security/role/pfelk_writer" '{
-    "cluster": ["monitor", "manage_index_templates", "manage_ilm", "read_ilm"],
+    "cluster": ["monitor"],
     "indices": [{
       "names": ["logs-pfelk.*-*"],
-      "privileges": ["auto_configure", "create_doc", "write", "create", "create_index", "manage", "manage_ilm", "view_index_metadata"]
+      "privileges": ["auto_configure", "create_doc", "view_index_metadata"]
     }]
   }' >/dev/null
 
@@ -437,19 +464,37 @@ create_writer_identity() {
     '{password:$p,roles:["pfelk_writer"],full_name:"pfELK Logstash Writer"}')" >/dev/null
 }
 
+install_data_stream_templates() {
+  log "Installing pfELK component/index templates and data-stream retention..."
+
+  local component logs_template error_template
+  component="$(cat "${PFELK_HOME}/templates/pfelk-mappings.component-template.json")"
+  logs_template="$(sed \
+    -e "s/__PFELK_RETENTION__/${PFELK_RETENTION}/g" \
+    -e "s/__PFELK_REPLICAS__/${PFELK_REPLICAS}/g" \
+    "${PFELK_HOME}/templates/pfelk-logs.index-template.json")"
+  error_template="$(sed \
+    -e "s/__PFELK_ERROR_RETENTION__/${PFELK_ERROR_RETENTION}/g" \
+    -e "s/__PFELK_REPLICAS__/${PFELK_REPLICAS}/g" \
+    "${PFELK_HOME}/templates/pfelk-pipeline-error.index-template.json")"
+
+  es_api PUT "/_component_template/pfelk-mappings" "${component}" >/dev/null
+  es_api PUT "/_index_template/pfelk-logs" "${logs_template}" >/dev/null
+  es_api PUT "/_index_template/pfelk-pipeline-error" "${error_template}" >/dev/null
+  ok "pfELK templates installed (retention ${PFELK_RETENTION}; errors ${PFELK_ERROR_RETENTION}; replicas ${PFELK_REPLICAS})."
+}
+
 configure_logstash_security() {
   log "Configuring Logstash CA, environment, and keystore..."
   install -d -o logstash -g logstash -m 0750 /etc/logstash/config/certs
 
-  if [[ -f /etc/elasticsearch/certs/http_ca.crt ]]; then
-    install -o logstash -g logstash -m 0640 \
-      /etc/elasticsearch/certs/http_ca.crt \
-      /etc/logstash/config/certs/http_ca.crt
-    PFELK_ES_HOSTS="https://localhost:9200"
-  else
-    warn "Elasticsearch CA was not found; configuring Logstash for HTTP localhost."
-    PFELK_ES_HOSTS="http://localhost:9200"
-  fi
+  [[ -f /etc/elasticsearch/certs/http_ca.crt ]] ||
+    die "Elasticsearch HTTP CA not found; refusing insecure Logstash configuration."
+
+  install -o logstash -g logstash -m 0640 \
+    /etc/elasticsearch/certs/http_ca.crt \
+    /etc/logstash/config/certs/http_ca.crt
+  PFELK_ES_HOSTS="https://localhost:9200"
 
   install -d -m 0755 /etc/systemd/system/logstash.service.d
   cat > /etc/systemd/system/logstash.service.d/pfelk.conf <<EOF
@@ -459,6 +504,7 @@ Environment="PFELK_ES_USER=pfelk_writer"
 Environment="PFELK_CA_PATH=/etc/logstash/config/certs/http_ca.crt"
 Environment="PFELK_NAMESPACE=${PFELK_NAMESPACE}"
 Environment="PFELK_TIMEZONE=${PFELK_TIMEZONE}"
+Environment="PFELK_DLQ_RETAIN=${PFELK_DLQ_RETAIN}"
 EOF
 
   local keystore="/etc/logstash/logstash.keystore"
@@ -616,10 +662,12 @@ start_services() {
 
 print_kibana_enrollment() {
   [[ "${SKIP_KIBANA}" == "true" ]] && return 0
+  [[ "${KIBANA_ENROLLED:-false}" == "true" ]] && return 0
+
   local token
   token="$(/usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s kibana 2>/dev/null || true)"
   if [[ -n "${token}" ]]; then
-    printf '\n%s\n' "Kibana enrollment token (save securely):"
+    printf '\n%s\n' "Kibana requires manual enrollment. Enrollment token:"
     printf '%s\n\n' "${token}"
   else
     warn "Could not generate a Kibana enrollment token automatically."
@@ -650,6 +698,7 @@ main() {
     ELASTIC_PASSWORD="$(reset_elastic_password)"
   fi
 
+  install_data_stream_templates
   create_writer_identity
 
   # Apply loopback/single-node settings only after Elastic has had the chance to
