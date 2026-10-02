@@ -1,24 +1,33 @@
 # 35-rules-desc.pfelk
 ################################################################################
-# Version: 23.08                                                               #
-# Required: No - Optional                                                      #
-# Description: Checks for the presense of the rule_number field, if present    #
-# runs translates the rule_number into a referenced description.               #
+# Version: 26.10                                                               #
+# Required: False - Optional                                                   #
+# Description: Resolves firewall rule IDs through rule-names.csv.               #
 ################################################################################
-#
+
 filter {
-  if "firewall" in [tags] {
-    if [rule][id] {
-      translate {
-        source => "[rule][id]"
-        target => "[rule][name]"
-        dictionary_path => "/etc/pfelk/databases/rule-names.csv"
-        refresh_interval => 60
-        refresh_behaviour => replace
-        fallback => "%{[rule][id]}"
-      }
+  if "firewall" in [tags] and [rule][id] {
+    translate {
+      id => "pfelk-firewall-rule-name"
+      source => "[rule][id]"
+      target => "[rule][name]"
+      dictionary_path => "/etc/pfelk/databases/rule-names.csv"
+      refresh_interval => 60
+      refresh_behaviour => replace
+      fallback => "%{[rule][id]}"
+    }
+
+    if [interface][alias] and [rule][name] {
       mutate {
-        add_field => { "[rule][description]" => "%{[interface][alias]}: %{[rule][name]}" }
+        add_field => {
+          "[rule][description]" => "%{[interface][alias]}: %{[rule][name]}"
+        }
+      }
+    } else if [rule][name] {
+      mutate {
+        copy => {
+          "[rule][name]" => "[rule][description]"
+        }
       }
     }
   }
