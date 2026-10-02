@@ -1,21 +1,33 @@
 # 36-ports-desc.pfelk
 ################################################################################
-# Version: 23.08                                                               #
+# Version: 26.10                                                               #
 # Required: False - Optional                                                   #
-# Description: Checks for the presense of the port field, if present runs      #
-# translates the port into a referenced description.                           #
+# Description: Maps a service port to network.application.                      #
+#                                                                              #
+# IMPORTANT: service-names-port-numbers.csv is keyed by PORT, not by the IP    #
+# protocol/IANA number. The legacy file incorrectly used network.iana_number.   #
 ################################################################################
-#
+
 filter {
   if "firewall" in [tags] {
-    if [network][iana_number] {
+    if [destination][port] {
       translate {
-        source => "[network][iana_number]"
+        id => "pfelk-destination-service"
+        source => "[destination][port]"
         target => "[network][application]"
         dictionary_path => "/etc/pfelk/databases/service-names-port-numbers.csv"
         refresh_interval => 300
         refresh_behaviour => replace
-        #fallback => "%{[network][iana_number]}"
+      }
+    } else if [source][port] {
+      # Useful for response traffic when no destination port was parsed.
+      translate {
+        id => "pfelk-source-service-fallback"
+        source => "[source][port]"
+        target => "[network][application]"
+        dictionary_path => "/etc/pfelk/databases/service-names-port-numbers.csv"
+        refresh_interval => 300
+        refresh_behaviour => replace
       }
     }
   }
