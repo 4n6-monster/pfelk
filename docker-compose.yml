@@ -1,6 +1,6 @@
 services:
   certs:
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION:-9.5.4}
     container_name: pfelk-certs
     user: "0"
     volumes:
@@ -12,23 +12,32 @@ services:
           bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
           unzip -q config/certs/ca.zip -d config/certs;
         fi;
-        if [ ! -f config/certs/es01/es01.crt ]; then
-          cat > config/certs/instances.yml <<EOF
-        instances:
-          - name: es01
-            dns:
-              - es01
-              - localhost
-            ip:
-              - 127.0.0.1
-        EOF
+
+        if [ ! -f config/certs/es01/es01.crt ] || [ ! -f config/certs/kibana/kibana.crt ]; then
+          printf "%s\n" \
+            "instances:" \
+            "  - name: es01" \
+            "    dns:" \
+            "      - es01" \
+            "      - localhost" \
+            "    ip:" \
+            "      - 127.0.0.1" \
+            "  - name: kibana" \
+            "    dns:" \
+            "      - kibana" \
+            "      - localhost" \
+            "      - ${KIBANA_SERVER_NAME:-pfelk.local}" \
+            "    ip:" \
+            "      - 127.0.0.1" \
+            > config/certs/instances.yml;
           bin/elasticsearch-certutil cert --silent --pem \
             --in config/certs/instances.yml \
             --out config/certs/certs.zip \
             --ca-cert config/certs/ca/ca.crt \
             --ca-key config/certs/ca/ca.key;
-          unzip -q config/certs/certs.zip -d config/certs;
+          unzip -q -o config/certs/certs.zip -d config/certs;
         fi;
+
         chown -R 0:0 config/certs;
         find config/certs -type d -exec chmod 750 {} \;;
         find config/certs -type f -exec chmod 640 {} \;;
@@ -39,13 +48,13 @@ services:
     depends_on:
       certs:
         condition: service_completed_successfully
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION:-9.5.4}
     container_name: pfelk-es01
     environment:
       - node.name=es01
-      - cluster.name=${CLUSTER_NAME}
+      - cluster.name=${CLUSTER_NAME:-pfelk}
       - discovery.type=single-node
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:?ELASTIC_PASSWORD must be set}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
@@ -58,14 +67,14 @@ services:
       - xpack.security.transport.ssl.certificate=certs/es01/es01.crt
       - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
       - xpack.security.transport.ssl.verification_mode=certificate
-      - xpack.license.self_generated.type=${LICENSE}
-      - ES_JAVA_OPTS=${ES_JAVA_OPTS}
+      - xpack.license.self_generated.type=${LICENSE:-basic}
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms2g -Xmx2g}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs:ro
       - esdata:/usr/share/elasticsearch/data
     ports:
-      - "${ES_BIND}:${ES_PORT}:9200"
-    mem_limit: ${ES_MEM_LIMIT}
+      - "${ES_BIND:-127.0.0.1}:${ES_PORT:-9200}:9200"
+    mem_limit: ${ES_MEM_LIMIT:-4g}
     ulimits:
       memlock:
         soft: -1
@@ -74,7 +83,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -fsS --cacert config/certs/ca/ca.crt -u elastic:${ELASTIC_PASSWORD} https://localhost:9200/_cluster/health >/dev/null"
+          "curl -fsS --cacert config/certs/ca/ca.crt -u elastic:${ELASTIC_PASSWORD:?ELASTIC_PASSWORD must be set} https://localhost:9200/_cluster/health >/dev/null"
         ]
       interval: 10s
       timeout: 5s
@@ -86,42 +95,74 @@ services:
     depends_on:
       es01:
         condition: service_healthy
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION:-9.5.4}
     container_name: pfelk-setup
     volumes:
       - certs:/usr/share/elasticsearch/config/certs:ro
+      - ./etc/pfelk/templates:/usr/share/pfelk/templates:ro
     environment:
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - KIBANA_PASSWORD=${KIBANA_PASSWORD}
-      - PFELK_ES_PASSWORD=${PFELK_ES_PASSWORD}
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:?ELASTIC_PASSWORD must be set}
+      - KIBANA_PASSWORD=${KIBANA_PASSWORD:?KIBANA_PASSWORD must be set}
+      - PFELK_ES_PASSWORD=${PFELK_ES_PASSWORD:?PFELK_ES_PASSWORD must be set}
+      - PFELK_RETENTION=${PFELK_RETENTION:-30d}
+      - PFELK_ERROR_RETENTION=${PFELK_ERROR_RETENTION:-14d}
+      - PFELK_REPLICAS=${PFELK_REPLICAS:-0}
     command: >
       bash -euc '
         ES="https://es01:9200";
         CA="config/certs/ca/ca.crt";
-        AUTH="elastic:${ELASTIC_PASSWORD}";
+        AUTH="elastic:${ELASTIC_PASSWORD:?ELASTIC_PASSWORD must be set}";
+
+        render_template() {
+          sed \
+            -e "s/__PFELK_RETENTION__/$${PFELK_RETENTION}/g" \
+            -e "s/__PFELK_ERROR_RETENTION__/$${PFELK_ERROR_RETENTION}/g" \
+            -e "s/__PFELK_REPLICAS__/$${PFELK_REPLICAS}/g" \
+            "$1";
+        };
+
+        echo "Installing pfELK component template";
+        curl -fsS --cacert "$${CA}" -u "$${AUTH}" \
+          -H "Content-Type: application/json" \
+          -X PUT "$${ES}/_component_template/pfelk-mappings" \
+          --data-binary @/usr/share/pfelk/templates/pfelk-mappings.component-template.json >/dev/null;
+
+        echo "Installing pfELK default data-stream template";
+        render_template /usr/share/pfelk/templates/pfelk-logs.index-template.json | \
+          curl -fsS --cacert "$${CA}" -u "$${AUTH}" \
+            -H "Content-Type: application/json" \
+            -X PUT "$${ES}/_index_template/pfelk-logs" \
+            --data-binary @- >/dev/null;
+
+        echo "Installing pfELK pipeline-error data-stream template";
+        render_template /usr/share/pfelk/templates/pfelk-pipeline-error.index-template.json | \
+          curl -fsS --cacert "$${CA}" -u "$${AUTH}" \
+            -H "Content-Type: application/json" \
+            -X PUT "$${ES}/_index_template/pfelk-pipeline-error" \
+            --data-binary @- >/dev/null;
 
         echo "Setting kibana_system password";
         curl -fsS --cacert "$${CA}" -u "$${AUTH}" \
           -H "Content-Type: application/json" \
           -X POST "$${ES}/_security/user/kibana_system/_password" \
-          -d "{\"password\":\"${KIBANA_PASSWORD}\"}" >/dev/null;
+          -d "{\"password\":\"${KIBANA_PASSWORD:?KIBANA_PASSWORD must be set}\"}" >/dev/null;
 
-        echo "Creating pfelk_writer role";
+        echo "Creating least-privilege pfelk_writer role";
         curl -fsS --cacert "$${CA}" -u "$${AUTH}" \
           -H "Content-Type: application/json" \
           -X PUT "$${ES}/_security/role/pfelk_writer" \
-          -d "{\"cluster\":[\"monitor\",\"manage_index_templates\",\"manage_ilm\",\"read_ilm\"],
+          -d "{\"cluster\":[\"monitor\"],
                \"indices\":[{\"names\":[\"logs-pfelk.*-*\"],
-               \"privileges\":[\"auto_configure\",\"create_doc\",\"write\",\"create\",\"create_index\",\"manage\",\"manage_ilm\",\"view_index_metadata\"]}]}" >/dev/null;
+               \"privileges\":[\"auto_configure\",\"create_doc\",\"view_index_metadata\"]}]}" >/dev/null;
 
         echo "Creating pfelk_writer user";
         curl -fsS --cacert "$${CA}" -u "$${AUTH}" \
           -H "Content-Type: application/json" \
           -X POST "$${ES}/_security/user/pfelk_writer" \
-          -d "{\"password\":\"${PFELK_ES_PASSWORD}\",\"roles\":[\"pfelk_writer\"],
-               \"full_name\":\"pfELK Logstash Writer\"}" >/dev/null;
+          -d "{\"password\":\"${PFELK_ES_PASSWORD:?PFELK_ES_PASSWORD must be set}\",
+               \"roles\":[\"pfelk_writer\"],\"full_name\":\"pfELK Logstash Writer\"}" >/dev/null;
 
-        echo "Security bootstrap complete";
+        echo "pfELK bootstrap complete";
       '
     restart: "no"
 
@@ -129,23 +170,31 @@ services:
     depends_on:
       setup:
         condition: service_completed_successfully
-    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION:-9.5.4}
     container_name: pfelk-kibana
     environment:
-      - SERVERNAME=pfelk-kibana
+      - SERVERNAME=${KIBANA_SERVER_NAME:-pfelk.local}
       - SERVER_HOST=0.0.0.0
+      - SERVER_SSL_ENABLED=true
+      - SERVER_SSL_CERTIFICATE=config/certs/kibana/kibana.crt
+      - SERVER_SSL_KEY=config/certs/kibana/kibana.key
+      - SERVER_PUBLICBASEURL=https://${KIBANA_SERVER_NAME:-pfelk.local}:${KIBANA_PORT:-5601}
       - ELASTICSEARCH_HOSTS=https://es01:9200
       - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD:?KIBANA_PASSWORD must be set}
       - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
     volumes:
       - certs:/usr/share/kibana/config/certs:ro
       - kibanadata:/usr/share/kibana/data
     ports:
-      - "${KIBANA_BIND}:${KIBANA_PORT}:5601"
-    mem_limit: ${KB_MEM_LIMIT}
+      - "${KIBANA_BIND:-0.0.0.0}:${KIBANA_PORT:-5601}:5601"
+    mem_limit: ${KB_MEM_LIMIT:-1g}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsSI http://localhost:5601/api/status >/dev/null"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS --cacert config/certs/ca/ca.crt https://localhost:5601/api/status >/dev/null"
+        ]
       interval: 10s
       timeout: 5s
       retries: 60
@@ -156,18 +205,19 @@ services:
     depends_on:
       setup:
         condition: service_completed_successfully
-    image: docker.elastic.co/logstash/logstash:${STACK_VERSION}
+    image: docker.elastic.co/logstash/logstash:${STACK_VERSION:-9.5.4}
     container_name: pfelk-logstash
     environment:
       - PFELK_ES_HOSTS=https://es01:9200
-      - PFELK_ES_USER=${PFELK_ES_USER}
-      - PFELK_ES_PASSWORD=${PFELK_ES_PASSWORD}
+      - PFELK_ES_USER=${PFELK_ES_USER:-pfelk_writer}
+      - PFELK_ES_PASSWORD=${PFELK_ES_PASSWORD:?PFELK_ES_PASSWORD must be set}
       - PFELK_CA_PATH=/usr/share/logstash/config/certs/ca/ca.crt
-      - PFELK_NAMESPACE=${PFELK_NAMESPACE}
-      - PFELK_TIMEZONE=${PFELK_TIMEZONE}
-      - PFELK_QUEUE_SIZE=${PFELK_QUEUE_SIZE}
-      - PFELK_DLQ_SIZE=${PFELK_DLQ_SIZE}
-      - LS_JAVA_OPTS=${LS_JAVA_OPTS}
+      - PFELK_NAMESPACE=${PFELK_NAMESPACE:-default}
+      - PFELK_TIMEZONE=${PFELK_TIMEZONE:-UTC}
+      - PFELK_QUEUE_SIZE=${PFELK_QUEUE_SIZE:-2gb}
+      - PFELK_DLQ_SIZE=${PFELK_DLQ_SIZE:-1gb}
+      - PFELK_DLQ_RETAIN=${PFELK_DLQ_RETAIN:-14d}
+      - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms1g -Xmx1g}
     volumes:
       - certs:/usr/share/logstash/config/certs:ro
       - ./etc/pfelk/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
@@ -177,9 +227,9 @@ services:
       - ./etc/pfelk/databases:/etc/pfelk/databases:ro
       - logstashdata:/usr/share/logstash/data
     ports:
-      - "${SYSLOG_BIND}:${SYSLOG_PORT}:5140/udp"
-      - "${SYSLOG_BIND}:${SYSLOG_PORT}:5140/tcp"
-    mem_limit: ${LS_MEM_LIMIT}
+      - "${SYSLOG_BIND:-0.0.0.0}:${SYSLOG_PORT:-5140}:5140/udp"
+      - "${SYSLOG_BIND:-0.0.0.0}:${SYSLOG_PORT:-5140}:5140/tcp"
+    mem_limit: ${LS_MEM_LIMIT:-2g}
     healthcheck:
       test:
         [
