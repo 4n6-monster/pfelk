@@ -1,140 +1,69 @@
 # 20-interfaces.pfelk
 ################################################################################
-# Version: 23.08                                                               #
+# Version: 26.10                                                               #
 # Required: False - Optional                                                   #
-# Description: Adds interface.alias and network.name based on interface.name   #
-# The interface.alias and network.name fields may be amended as desired        #
+# Description: Example interface alias/network-name enrichment.                #
+#                                                                              #
+# Customize firewall hostname and interface mappings before enabling.          #
 ################################################################################
-#
-### firewall-1 ###
+
 filter {
-### Change first.network.local to pfSesne or OPNsense host name ###
-  if [log][syslog][hostname] == "first.network.local" {
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb0$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "WAN" }
-        add_field => { "[network][name]" => "FiOS" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb1$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "LAN" }
-        add_field => { "[network][name]" => "Home Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb2$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "DMZ" }
-        add_field => { "[network][name]" => "Exposed Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^ix0$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "LAN" }
-        add_field => { "[network][name]" => "Home Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^ix2$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "DEV" }
-        add_field => { "[network][name]" => "Test Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^ix0_vlan300$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "WiFi" }
-        add_field => { "[network][name]" => "WiFi Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^ix0_vlan500$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "IoT" }
-        add_field => { "[network][name]" => "IoT  Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^ix0_vlan3000$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "WiFi" }
-        add_field => { "[network][name]" => "Guest Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^lo0$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "Link-Local" }
-        update => { "[network][direction]" => "%{[network][direction]}bound" }
-        update => { "[network][type]" => "ipv%{[network][type]}" }
-      }
-    }
-    ### Fallback interface ###
-    if ![interface][alias] and [interface][name] {
+  if "firewall" in [tags] {
+    # Example firewall. Duplicate this block for additional firewalls.
+    if [log][syslog][hostname] == "first.network.local" {
+      if [interface][name] == "igb0" {
         mutate {
-          add_field => { "[interface][alias]" => "%{[interface][name]}" }
-          add_field => { "[network][name]" => "%{[interface][name]}" }
-      }
-    }
-  }
-}
-### firewall-2 ###
-filter {
-### Change first.network.local to pfSesne or OPNsense host name ###
-  if [log][syslog][hostname] == "second.network.local" {
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb0$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "WAN" }
-        add_field => { "[network][name]" => "FiOS" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb1$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "LAN" }
-        add_field => { "[network][name]" => "Home Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb2$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "DEV" }
-        add_field => { "[network][name]" => "Lab" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb3$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "DMZ" }
-        add_field => { "[network][name]" => "Exposed Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^igb1_vlan2000$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "VLAN" }
-        add_field => { "[network][name]" => "Isolated Network" }
-      }
-    }
-    ### Change interface as desired ###
-    if [interface][name] =~ /^lo0$/ {
-      mutate {
-        add_field => { "[interface][alias]" => "Link-Local" }
-        update => { "[network][direction]" => "%{[network][direction]}bound" }
-        update => { "[network][type]" => "ipv%{[network][type]}" }
-      }
-    }
-    ### Fallback interface ###
-    if ![interface][alias] and [interface][name] {
+          add_field => {
+            "[interface][alias]" => "WAN"
+            "[network][name]" => "Internet"
+          }
+        }
+      } else if [interface][name] == "igb1" {
         mutate {
-          add_field => { "[interface][alias]" => "%{[interface][name]}" }
-          add_field => { "[network][name]" => "%{[interface][name]}" }
+          add_field => {
+            "[interface][alias]" => "LAN"
+            "[network][name]" => "Home Network"
+          }
+        }
+      } else if [interface][name] == "igb2" {
+        mutate {
+          add_field => {
+            "[interface][alias]" => "DMZ"
+            "[network][name]" => "DMZ"
+          }
+        }
+      } else if [interface][name] == "lo0" {
+        mutate {
+          add_field => {
+            "[interface][alias]" => "Loopback"
+            "[network][name]" => "Loopback"
+          }
+        }
+      }
+
+      # Safe fallback: preserve the physical/logical interface name as alias.
+      if ![interface][alias] and [interface][name] {
+        mutate {
+          copy => {
+            "[interface][name]" => "[interface][alias]"
+            "[interface][name]" => "[network][name]"
+          }
+        }
+      }
+
+      # Mirror the alias into the ECS observer side selected by 02-firewall.
+      if [network][direction] == "inbound" and [interface][alias] {
+        mutate {
+          copy => {
+            "[interface][alias]" => "[observer][ingress][interface][alias]"
+          }
+        }
+      } else if [network][direction] == "outbound" and [interface][alias] {
+        mutate {
+          copy => {
+            "[interface][alias]" => "[observer][egress][interface][alias]"
+          }
+        }
       }
     }
   }
