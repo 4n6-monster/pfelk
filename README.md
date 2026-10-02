@@ -1,97 +1,217 @@
-![Version badge](https://img.shields.io/badge/ELK-9.5.4-blue.svg)
+![Elastic](https://img.shields.io/badge/Elastic-9.5.4-blue.svg)
+![pfELK](https://img.shields.io/badge/pfELK-26.10.1-green.svg)
 
-[![](https://dcbadge.vercel.app/api/server/h3DJs2Kj8k)](https://discord.gg/h3DJs2Kj8k)
+# pfELK — pfSense/OPNsense + Elastic Stack
 
-# Elastic Integration
-- https://docs.elastic.co/en/integrations/pfsense
+pfELK ingests, normalizes, enriches, and visualizes pfSense/OPNsense and related
+network-security logs with Elasticsearch, Logstash, and Kibana.
 
-# pfSense/OPNsense + Elastic Stack  
-![pfelk dashboard](https://raw.githubusercontent.com/pfelk/pfelk/main/Images/Dashboard%20-%20v61.gif)
+This fork targets Elastic 9.5.4, ECS-oriented data streams, least-privilege
+runtime ingestion, parser-failure visibility, durable Logstash buffering, and
+repeatable native/Docker deployments.
 
-### Contents
-* [Prerequisites](#prerequisites)
-* [Key Features](#key-features)
-* [pfelk overview](#pfelk-overview)
-* [Installation](#installation)
-  * [docker](#docker-compose)
-  * [script installation](#script-installation-method)
-  * [manual installation](#manual-installation-method)
-* [Roadmap](#roadmap)
-* [Comparison to similar solutions](#comparison-to-similar-solutions)
-* [Contributing](#contributing)
-* [License](#license)
+## Highlights
 
-### Prerequisites
-- Ubuntu Server v20.04+ or Debian Server 11+ (stretch and buster tested)
-- pfSense v2.5.0+ or OPNsense 23.0+
-- Minimum of 8GB of RAM (Docker requires more) and recommend 32GB ([WiKi Reference](https://github.com/pfelk/pfelk/wiki/How-To:-Performance))
-- Setting up remote logging ([WiKi Reference](https://github.com/pfelk/pfelk/wiki/How-To:-Prerequisite-%7C--pfSense-OPNsense-Logging))
+- pfSense / OPNsense `filterlog`
+- IPv4 / IPv6, TCP / UDP, structured ICMP and CARP parsing
+- Unbound DNS including modern `query:` / `reply:` records
+- OpenVPN
+- Suricata and Snort
+- HAProxy / NGINX / Squid
+- Captive Portal
+- ISC DHCP (legacy) and Kea DHCPv4
+- Kea DHCPv6 is explicitly marked unsupported until fixture-backed parsing exists
+- ECS `network.transport`, firewall `event.type`, `observer.*`, and `related.ip`
+- dataset-oriented data streams
+- dedicated `pfelk.pipeline_error` data stream
+- configurable data-stream lifecycle retention
+- persistent Logstash queue and dead-letter queue
+- least-privilege `pfelk_writer`; Logstash does not run as `elastic`
+- Docker TLS for Elasticsearch **and Kibana browser traffic**
+- GitHub Actions syntax/config/parser-fixture validation
 
-**pfelk** is a highly customizable **open-source** tool for ingesting and visualizing your firewall traffic with the full power of Elasticsearch, Logstash and Kibana.
+## Requirements
 
-### Key features:
+### Native
 
-- **ingest** and **enrich** your pfSense/OPNsense **firewall traffic** logs by leveraging *Logstash*
+- Debian 12/13 or Ubuntu 22.04/24.04/26.04
+- systemd
+- 8 GiB RAM minimum; 16+ GiB recommended
+- SSD-backed storage sized for event volume and retention
 
-- **search** your indexed data in *near-real-time* with the full power of the *Elasticsearch*
+### Docker
 
-- **visualize** you network traffic with interactive dashboards, Maps, graphs in *Kibana*
+- Docker Engine + Compose v2
+- 8 GiB RAM minimum; 16+ GiB recommended
+- `vm.max_map_count=262144`
 
-Supported entries include:
- - pfSense/OPNSense setups
- - TCP/UDP/ICMP protocols
- - KEA-DHCP (v4/v6) message types with dashboard - in development 
- - DHCP (v4/v6) message types with dashboard - depreciated
- - IPv4/IPv6 mapping
- - pfSense CARP data
- - openVPN with dashboard
- - Unbound DNS Resolver with dashboard and Kibana SIEM compliance
- - Suricata IDS with dashboard and Kibana SIEM compliance
- - Snort IDS with dashboard and Kibana SIEM compliance 
- - Squid with dashboard and Kibana SIEM compliance
- - HAProxy with dashboard
- - Captive Portal with dashboard
- - NGINX with dashboard
+## Native quick start
 
-**pfelk** aims to replace the vanilla pfSense/OPNsense web UI with extended search and visualization features. You can deploy this solution via **ansible-playbook**, **docker-compose**, **bash script**, or manually.
+```bash
+curl -fsSLO \
+  https://raw.githubusercontent.com/4n6-monster/pfelk/main/etc/pfelk/scripts/pfelk-installer.sh
+chmod +x pfelk-installer.sh
 
-### pfelk overview
-* ![pfelk-overview](https://github.com/pfelk/pfelk/raw/main/Images/pfelk-visual.png)
+sudo ./pfelk-installer.sh \
+  --stack-version 9.5.4 \
+  --timezone America/Chicago \
+  --retention 30d \
+  --error-retention 14d
+```
 
-### Quick start
+Optional enrichment files/dictionaries:
 
-### Installation
+```bash
+sudo ./pfelk-installer.sh \
+  --timezone America/Chicago \
+  --enrichments
+```
 
-#### docker-compose
- * [Manual Method](https://github.com/pfelk/pfelk/blob/main/install/docker.md) or [Scripted Installed](#) - Scripted Method Coming Soon
- * `$ docker-compose up`
+The installer configures the signed Elastic 9.x APT repository, Elasticsearch,
+Logstash, Kibana enrollment, pfELK templates/retention, the `pfelk_writer`
+identity, the Logstash keystore, PQ/DLQ durability, and performs
+`logstash --config.test_and_exit` before restart.
 
-#### script installation method
-* Download installer script from [pfelk](https://raw.githubusercontent.com/pfelk/pfelk/main/etc/pfelk/scripts/pfelk-installer.sh) repository
-* `$ wget https://raw.githubusercontent.com/pfelk/pfelk/main/etc/pfelk/scripts/pfelk-installer.sh`
-* Make script executable 
-* `$ chmod +x pfelk-installer.sh`
-* Run installer script 
-* `$ sudo ./pfelk-installer.sh`
-* Configure Security [here](https://github.com/pfelk/pfelk/blob/main/install/security.md)
-* Templates [here](https://github.com/pfelk/pfelk/blob/main/install/templates.md)
-* Finish Configuring [here](https://github.com/pfelk/pfelk/blob/main/install/configuration.md)
+Validate at any time:
 
-#### manual installation method
-* [Ubuntu 20.04-22.04](https://github.com/pfelk/pfelk/blob/main/install/preparation.md)
-* [Debian 11-12](https://github.com/pfelk/pfelk/blob/main/install/preparation.md)
-* [Docker](https://github.com/pfelk/pfelk/blob/main/install/docker.md)
+```bash
+sudo /etc/pfelk/scripts/pfelk-validate.sh
+```
 
-### Roadmap
-This is the experimental public roadmap for the pfelk project.
+See [install/install.md](install/install.md).
 
-[See the roadmap »](https://github.com/orgs/pfelk/projects/11)
+## Docker quick start
 
-### Comparison to similar solutions
-[Comparisions »](https://github.com/pfelk/pfelk/wiki/Comparison)
+Clone the fork and generate a private `.env`:
 
-### Contributing
-Please reference to the [CONTRIBUTING file](https://github.com/pfelk/pfelk/blob/main/CONTRIBUTING.md). Collectively we can enhance and improve this product. Issues, feature requests, PRs, and documentation contributions are encouraged and welcomed!
+```bash
+git clone https://github.com/4n6-monster/pfelk.git
+cd pfelk
 
-### License
-This project is licensed under the terms of the Apache 2.0 open source license. Please refer to [LICENSE](https://github.com/pfelk/pfelk/blob/main/license) for the full terms.
+./etc/pfelk/scripts/pfelk-docker-init.sh
+```
+
+Review `.env`, especially:
+
+```text
+PFELK_TIMEZONE
+PFELK_RETENTION
+PFELK_ERROR_RETENTION
+PFELK_REPLICAS
+KIBANA_SERVER_NAME
+KIBANA_BIND
+SYSLOG_BIND
+ES_MEM_LIMIT
+LS_MEM_LIMIT
+```
+
+`KIBANA_SERVER_NAME` must resolve to the Docker host. The default is
+`pfelk.local`; add a local DNS record or change it before the first certificate
+bootstrap.
+
+Then:
+
+```bash
+sudo sysctl -w vm.max_map_count=262144
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+```
+
+Open Kibana at:
+
+```text
+https://<KIBANA_SERVER_NAME>:5601
+```
+
+The Docker CA is private/self-managed. Trust the generated CA in your browser or
+OS trust store if you want the browser to show the connection as trusted.
+
+See [install/docker.md](install/docker.md).
+
+## Data streams and retention
+
+Application/source identity is the ECS dataset:
+
+```text
+logs-pfelk.firewall-default
+logs-pfelk.unbound-default
+logs-pfelk.openvpn-default
+logs-pfelk.suricata-default
+logs-pfelk.pipeline_error-default
+```
+
+`PFELK_NAMESPACE` groups deployments (`default`, `home`, `lab`, `production`,
+etc.). The setup process installs pfELK component/index templates before
+Logstash starts writing.
+
+Defaults:
+
+```text
+PFELK_RETENTION=30d
+PFELK_ERROR_RETENTION=14d
+PFELK_REPLICAS=0
+```
+
+Increase `PFELK_REPLICAS` for a multi-node Elasticsearch deployment.
+
+## Parser failures
+
+Main parser failures receive both:
+
+```text
+pfelk_pipeline_error
+_pfelk_<parser>_..._failure
+```
+
+and are routed to:
+
+```text
+logs-pfelk.pipeline_error-<namespace>
+```
+
+This preserves the original event while making upstream log-format changes easy
+to detect.
+
+## Firewall forwarding
+
+Configure pfSense/OPNsense to forward syslog to the pfELK host on port `5140`.
+UDP is the common default; TCP is also accepted.
+
+See [install/configuration.md](install/configuration.md).
+
+## Security
+
+- `.env` is local-only and gitignored; only `.env.example` belongs in Git.
+- Docker fails closed if required passwords are missing.
+- Elasticsearch is loopback-bound on the Docker host by default.
+- Docker Kibana uses HTTPS.
+- Restrict Kibana/syslog binds and host firewall rules to appropriate networks.
+- `elastic` is bootstrap/admin only; Logstash uses `pfelk_writer`.
+- Native Logstash stores its writer password in the Logstash keystore.
+- Review `error-data.sh` output manually before sharing support data.
+
+See [install/security.md](install/security.md).
+
+## Validation and development
+
+Local static checks:
+
+```bash
+bash -n etc/pfelk/scripts/*.sh
+python3 tests/validate_repository.py
+./etc/pfelk/scripts/pfelk-docker-init.sh
+docker compose config --quiet
+```
+
+GitHub Actions additionally runs:
+
+- ShellCheck
+- Logstash `--config.test_and_exit` using Logstash 9.5.4
+- representative fixture replay through the actual pfELK filters
+- assertions for TCP/ICMP firewall normalization, Unbound, NGINX timestamps,
+  and explicit Kea DHCPv6 pipeline-error handling
+
+## License
+
+Apache License 2.0. See the repository license file.
