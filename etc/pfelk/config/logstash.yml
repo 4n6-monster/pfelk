@@ -1,12 +1,10 @@
 # logstash.yml
 ################################################################################
-# Version: 26.10                                                               #
+# Version: 26.10.1                                                             #
 # Required: True (Docker)                                                      #
 # Description: Logstash runtime settings for pfELK.                            #
 ################################################################################
 
-# The API is local-only by default. Override only when a secured remote API is
-# explicitly required.
 api.http.host: "${PFELK_LOGSTASH_API_HOST:127.0.0.1}"
 
 # Durable buffering protects short Elasticsearch interruptions.
@@ -14,12 +12,13 @@ queue.type: persisted
 queue.max_bytes: "${PFELK_QUEUE_SIZE:2gb}"
 queue.compression: balanced
 
-# Preserve events rejected by supported outputs because of mapping/index errors.
+# Preserve supported output/indexing failures for investigation while bounding
+# both disk usage and age.
 dead_letter_queue.enable: true
 dead_letter_queue.max_bytes: "${PFELK_DLQ_SIZE:1gb}"
+dead_letter_queue.retain.age: "${PFELK_DLQ_RETAIN:14d}"
 dead_letter_queue.storage_policy: drop_older
 
-# Stack Monitoring credentials were previously hard-coded here. Keep legacy
-# X-Pack monitoring disabled by default and use Elastic Agent/OTel or explicitly
-# configure monitoring credentials if Stack Monitoring is required.
+# Legacy Stack Monitoring is intentionally disabled. Use Elastic Agent/OTel or
+# configure monitoring explicitly when required.
 xpack.monitoring.enabled: false
