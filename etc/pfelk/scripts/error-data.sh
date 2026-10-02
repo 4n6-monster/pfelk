@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version | 26.10.0
+# Version | 26.10.1
 # Repository | https://github.com/4n6-monster/pfelk
 set -Eeuo pipefail
 umask 077
@@ -39,7 +39,7 @@ section "pfELK file tree"
 find /etc/pfelk -maxdepth 3 -type f -printf '%p\n' 2>/dev/null | sort >> "${OUT}" || true
 
 section "Logstash configuration (redacted)"
-for f in /etc/pfelk/conf.d/*.pfelk /etc/pfelk/patterns/*.grok /etc/logstash/pipelines.yml /etc/logstash/logstash.yml; do
+for f in /etc/pfelk/conf.d/*.pfelk /etc/pfelk/patterns/*.grok /etc/pfelk/templates/*.json /etc/logstash/pipelines.yml /etc/logstash/logstash.yml; do
   [[ -e "${f}" ]] && safe_cat "${f}"
 done
 

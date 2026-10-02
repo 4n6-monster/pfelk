@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version | 26.10.0
+# Version | 26.10.1
 set -Eeuo pipefail
 umask 077
 
@@ -7,16 +7,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ENV_FILE="${ROOT}/.env"
 EXAMPLE="${ROOT}/.env.example"
 
-[[ -f "${EXAMPLE}" ]] || { echo "Missing ${EXAMPLE}" >&2; exit 1; }
+command -v openssl >/dev/null 2>&1 || {
+  echo "openssl is required to generate deployment secrets." >&2
+  exit 1
+}
+
+[[ -f "${EXAMPLE}" ]] || {
+  echo "Missing ${EXAMPLE}" >&2
+  exit 1
+}
+
 if [[ -e "${ENV_FILE}" ]]; then
-  echo "${ENV_FILE} already exists; refusing to overwrite." >&2
+  echo "${ENV_FILE} already exists; refusing to overwrite it." >&2
+  echo "Move/remove the existing file only after preserving any values you need." >&2
   exit 1
 fi
 
 cp "${EXAMPLE}" "${ENV_FILE}"
 
 random_secret() {
-  openssl rand -base64 36 | tr -d '\n' | tr '/+' '_-'
+  openssl rand -base64 48 | tr -d '\n' | tr '/+' '_-'
 }
 
 escape_sed() {
@@ -34,5 +44,23 @@ sed -i \
   "${ENV_FILE}"
 
 chmod 0600 "${ENV_FILE}"
-echo "Created ${ENV_FILE} with strong random credentials (mode 0600)."
-echo "Review PFELK_TIMEZONE, bind addresses, and memory limits before docker compose up -d."
+
+cat <<EOF2
+Created ${ENV_FILE} with unique random credentials (mode 0600).
+
+Before deployment review at least:
+  PFELK_TIMEZONE
+  PFELK_RETENTION / PFELK_ERROR_RETENTION
+  PFELK_REPLICAS
+  KIBANA_SERVER_NAME
+  KIBANA_BIND
+  SYSLOG_BIND
+  memory/JVM limits
+
+Docker Kibana uses HTTPS. Ensure KIBANA_SERVER_NAME resolves to this Docker host
+(or change it before the first certificate-generation run).
+
+Then run:
+  docker compose config --quiet
+  docker compose up -d
+EOF2
